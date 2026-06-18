@@ -1,0 +1,169 @@
+---
+import MainLayout from '../../layouts/MainLayout.astro';
+import 'glightbox/dist/css/glightbox.css';
+import '../../styles/glightbox-custom.css';
+
+const base = import.meta.env.BASE_URL;
+---
+
+<MainLayout>
+	<section
+		class="py-16 pt-24"
+		x-data="collectionsPage()"
+		x-init="init()"
+		data-base={base}
+	>
+		<div class="container-custom px-4">
+			<div class="mb-16 text-center">
+				<h1 class="text-4xl md:text-5xl font-bold mb-4">Gallery</h1>
+				<p class="text-gray-600 max-w-xl mx-auto">浏览所有作品集</p>
+			</div>
+
+			<template x-if="loading">
+				<div class="text-center py-20 text-gray-400">加载中…</div>
+			</template>
+
+			<template x-if="!loading && allPhotos.length === 0">
+				<div class="text-center py-20">
+					<p class="text-gray-600 mb-6">还没有任何作品。</p>
+					<a :href="`${base}/upload/`" class="px-6 py-3 bg-black text-white rounded inline-block">
+						上传第一张 →
+					</a>
+				</div>
+			</template>
+
+			<template x-if="!loading && allPhotos.length > 0">
+				<div>
+					<!-- collection 标签栏 -->
+					<div class="flex justify-center mb-10">
+						<div class="flex flex-wrap gap-2 justify-center">
+							<button
+								@click="selectCollection(null)"
+								class="px-4 py-2 border transition-all"
+								:class="
+									activeColl === null
+										? 'border-black bg-black text-white'
+										: 'border-gray-200 text-gray-700 hover:border-gray-300'
+								"
+							>
+								All
+							</button>
+							<template x-for="c in collections" :key="c.slug">
+								<button
+									@click="selectCollection(c.slug)"
+									class="px-4 py-2 border transition-all"
+									:class="
+										activeColl === c.slug
+											? 'border-black bg-black text-white'
+											: 'border-gray-200 text-gray-700 hover:border-gray-300'
+									"
+								>
+									<span x-text="c.name"></span>
+									<span class="text-xs opacity-60 ml-1" x-text="`(${c.count})`"></span>
+								</button>
+							</template>
+						</div>
+					</div>
+
+					<section
+						id="photo-grid"
+						class="relative w-full mx-auto overflow-hidden"
+					>
+					</section>
+				</div>
+			</template>
+		</div>
+	</section>
+</MainLayout>
+
+<script>
+	import {
+		listAll,
+		groupByCollection,
+		deliveryUrl,
+		srcSet,
+		type PhotoEntry,
+	} from '../../lib/photos';
+	import { setupGallery, teardownGallery } from '../../scripts/photo-grid';
+
+	function collectionsPage() {
+		return {
+			loading: true,
+			allPhotos: [] as PhotoEntry[],
+			collections: [] as { slug: string; name: string; count: number }[],
+			activeColl: null as string | null,
+
+			async init() {
+				const all = await listAll();
+				this.allPhotos = all;
+				const groups = groupByCollection(all);
+				// 按图片数量降序
+				groups.sort((a, b) => b.photos.length - a.photos.length);
+				this.collections = groups.map((g) => ({
+					slug: g.slug,
+					name: g.name,
+					count: g.photos.length,
+				}));
+
+				const params = new URLSearchParams(window.location.search);
+				const coll = params.get('coll');
+				if (coll && this.collections.some((c) => c.slug === coll)) {
+					this.activeColl = coll;
+				}
+
+				this.loading = false;
+				await this.$nextTick();
+				renderGrid(this.filtered());
+			},
+
+			filtered() {
+				if (!this.activeColl) return this.allPhotos;
+				return this.allPhotos.filter((p) => p.collectionSlug === this.activeColl);
+			},
+
+			async selectCollection(coll: string | null) {
+				this.activeColl = coll;
+				const url = new URL(window.location.href);
+				if (coll) url.searchParams.set('coll', coll);
+				else url.searchParams.delete('coll');
+				history.replaceState({}, '', url.toString());
+				await this.$nextTick();
+				renderGrid(this.filtered());
+			},
+		};
+	}
+
+	function renderGrid(photos: PhotoEntry[]) {
+		const grid = document.getElementById('photo-grid');
+		if (!grid) return;
+		teardownGallery();
+		grid.innerHTML = '';
+		grid.removeAttribute('style');
+		for (const p of photos) {
+			const a = document.createElement('a');
+			a.className = 'photo-item glightbox absolute transition-transform hover:scale-[1.02] hover:z-10';
+			a.href = deliveryUrl(p, { width: 2000 });
+			a.dataset.gallery = 'gallery1';
+			a.dataset.type = 'image';
+			if (p.meta.description) a.dataset.glightbox = `title: ${p.meta.description}`;
+
+			const img = document.createElement('img');
+			img.src = deliveryUrl(p, { width: 800 });
+			img.srcset = srcSet(p);
+			img.sizes = '(max-width: 768px) 50vw, 33vw';
+			img.alt = p.meta.title || '';
+			img.width = p.width;
+			img.height = p.height;
+			img.loading = 'lazy';
+			img.className = 'w-full h-full object-cover rounded-sm shadow-sm hover:shadow-lg transition-shadow';
+			a.appendChild(img);
+			grid.appendChild(a);
+		}
+		setupGallery();
+	}
+
+	(window as any).collectionsPage = collectionsPage;
+	document.addEventListener('alpine:init', () => {
+		(window as any).Alpine?.data('collectionsPage', collectionsPage);
+	});
+</script>

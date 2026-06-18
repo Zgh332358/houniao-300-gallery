@@ -1,0 +1,73 @@
+---
+import 'glightbox/dist/css/glightbox.css';
+import '../styles/glightbox-custom.css';
+---
+
+<div class="max-w-2xl mx-auto text-center mb-16">
+	<h2 class="text-3xl md:text-4xl font-bold mb-4">最新作品</h2>
+	<p class="text-gray-600">驻地艺术家最近上传的作品</p>
+</div>
+<div class="p-4">
+	<section
+		id="photo-grid"
+		class="relative w-full mx-auto overflow-hidden"
+	>
+	</section>
+	<div id="featured-empty" class="text-center py-20 text-gray-400 hidden">
+		还没有作品。<a class="underline ml-2" href={`${import.meta.env.BASE_URL}/upload/`}>上传第一张 →</a>
+	</div>
+</div>
+
+<script>
+	import { listAll, deliveryUrl, srcSet, type PhotoEntry } from '../lib/photos';
+	import { setupGallery } from '../scripts/photo-grid';
+
+	const FEATURED_LIMIT = 24;
+
+	async function loadFeatured() {
+		const grid = document.getElementById('photo-grid');
+		const empty = document.getElementById('featured-empty');
+		if (!grid) return;
+
+		const all = await listAll();
+		const photos = all.slice(0, FEATURED_LIMIT);
+
+		if (photos.length === 0) {
+			empty?.classList.remove('hidden');
+			return;
+		}
+
+		grid.innerHTML = '';
+		for (const p of photos) {
+			grid.appendChild(buildLink(p));
+		}
+		setupGallery();
+	}
+
+	function buildLink(p: PhotoEntry) {
+		const a = document.createElement('a');
+		a.className = 'photo-item glightbox absolute transition-transform hover:scale-[1.02] hover:z-10';
+		a.href = deliveryUrl(p, { width: 2000 });
+		a.dataset.gallery = 'featured';
+		a.dataset.type = 'image';
+		if (p.meta.description) a.dataset.glightbox = `title: ${p.meta.description}`;
+
+		const img = document.createElement('img');
+		img.src = deliveryUrl(p, { width: 800 });
+		img.srcset = srcSet(p);
+		img.sizes = '(max-width: 768px) 50vw, 33vw';
+		img.alt = p.meta.title || '';
+		img.width = p.width;
+		img.height = p.height;
+		img.loading = 'lazy';
+		img.className = 'w-full h-full object-cover rounded-sm shadow-sm hover:shadow-lg transition-shadow';
+		a.appendChild(img);
+		return a;
+	}
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', loadFeatured);
+	} else {
+		loadFeatured();
+	}
+</script>

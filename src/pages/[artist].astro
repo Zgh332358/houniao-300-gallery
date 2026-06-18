@@ -1,0 +1,226 @@
+---
+import MainLayout from '../layouts/MainLayout.astro';
+import 'glightbox/dist/css/glightbox.css';
+import '../styles/glightbox-custom.css';
+
+const base = import.meta.env.BASE_URL;
+
+export async function getStaticPaths() {
+	// 占位 slug：构建时无法知道艺术家列表，由 postbuild 把这个 HTML 复制成
+	// dist/404.html，所有 /<slug>/ 未知路径都 fallback 到这里，由客户端解析 URL。
+	return [{ params: { artist: '__artist__' } }];
+}
+---
+
+<MainLayout>
+	<section
+		id="artist-page"
+		class="pt-32 pb-20"
+		x-data="artistPage()"
+		x-init="init()"
+		data-base={base}
+	>
+		<div class="container-custom px-4">
+			<!-- 加载态 -->
+			<template x-if="loading">
+				<div class="text-center py-20 text-gray-400">加载中…</div>
+			</template>
+
+			<!-- 找不到艺术家 -->
+			<template x-if="!loading && photos.length === 0">
+				<div class="text-center py-20">
+					<h1 class="text-3xl font-bold mb-4" x-text="`没找到「${slug}」`"></h1>
+					<p class="text-gray-600 mb-8">
+						这个艺术家页还没有作品，或者 slug 拼写有误。<br />
+						你可以去 <a :href="`${base}/upload/`" class="underline">上传页</a> 创建你自己的页面。
+					</p>
+				</div>
+			</template>
+
+			<!-- 正常展示 -->
+			<template x-if="!loading && photos.length > 0">
+				<div>
+					<!-- 艺术家头部 -->
+					<header class="text-center mb-12">
+						<h1 class="text-4xl md:text-5xl font-bold mb-3" x-text="artistName"></h1>
+						<div class="flex items-center justify-center gap-3 text-gray-600">
+							<a
+								:href="contactHref"
+								class="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-full hover:border-black transition-colors"
+							>
+								<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+								</svg>
+								<span x-text="artistContact"></span>
+							</a>
+						</div>
+						<p class="text-sm text-gray-500 mt-4">
+							<span x-text="photos.length"></span> 张作品 ·
+							<span x-text="collections.length"></span> 个作品集
+						</p>
+					</header>
+
+					<!-- collection 标签栏 -->
+					<div class="flex justify-center mb-10" x-show="collections.length > 1">
+						<div class="flex flex-wrap gap-2 justify-center">
+							<button
+								@click="selectCollection(null)"
+								class="px-4 py-2 border transition-all"
+								:class="
+									activeColl === null
+										? 'border-black bg-black text-white'
+										: 'border-gray-200 text-gray-700 hover:border-gray-300'
+								"
+							>
+								全部
+							</button>
+							<template x-for="c in collections" :key="c.slug">
+								<button
+									@click="selectCollection(c.slug)"
+									class="px-4 py-2 border transition-all"
+									:class="
+										activeColl === c.slug
+											? 'border-black bg-black text-white'
+											: 'border-gray-200 text-gray-700 hover:border-gray-300'
+									"
+									x-text="c.name"
+								>
+								</button>
+							</template>
+						</div>
+					</div>
+
+					<!-- Photo Grid 容器，由 JS 动态填充 -->
+					<section
+						id="photo-grid"
+						class="relative w-full mx-auto overflow-hidden"
+					>
+					</section>
+				</div>
+			</template>
+		</div>
+	</section>
+</MainLayout>
+
+<script>
+	import {
+		listAll,
+		groupByCollection,
+		deliveryUrl,
+		srcSet,
+		type PhotoEntry,
+	} from '../lib/photos';
+	import { setupGallery, teardownGallery } from '../scripts/photo-grid';
+
+	function artistPage() {
+		return {
+			loading: true,
+			slug: '',
+			photos: [] as PhotoEntry[],
+			collections: [] as { slug: string; name: string }[],
+			activeColl: null as string | null,
+			artistName: '',
+			artistContact: '',
+
+			get contactHref() {
+				const c = this.artistContact || '';
+				if (/^https?:\/\//i.test(c)) return c;
+				if (c.includes('@') && !c.startsWith('@')) return `mailto:${c}`;
+				if (c.startsWith('@')) return `https://instagram.com/${c.slice(1)}`;
+				return '#';
+			},
+
+			async init() {
+				this.slug = parseArtistSlugFromUrl();
+				if (!this.slug) {
+					this.loading = false;
+					return;
+				}
+				const all = await listAll();
+				const mine = all.filter((p) => p.artistSlug === this.slug);
+				this.photos = mine;
+
+				if (mine.length > 0) {
+					this.artistName = mine[0].meta.artistName || this.slug;
+					this.artistContact = mine[0].meta.artistContact || '';
+					const groups = groupByCollection(mine);
+					this.collections = groups.map((g) => ({ slug: g.slug, name: g.name }));
+				}
+				this.loading = false;
+				await this.$nextTick();
+				renderGrid(this.filtered());
+			},
+
+			filtered() {
+				if (!this.activeColl) return this.photos;
+				return this.photos.filter((p) => p.collectionSlug === this.activeColl);
+			},
+
+			async selectCollection(coll: string | null) {
+				this.activeColl = coll;
+				await this.$nextTick();
+				renderGrid(this.filtered());
+			},
+		};
+	}
+
+	function parseArtistSlugFromUrl(): string {
+		// 优先 ?slug=xxx 用于 dev 预览（dev 模式没有 404 fallback）
+		const params = new URLSearchParams(window.location.search);
+		const fromQuery = params.get('slug');
+		if (fromQuery) return fromQuery;
+
+		// 否则从 pathname 取第一段：/<base>/<slug>/...
+		const path = window.location.pathname.replace(/\/+$/, '');
+		const baseEl = document.getElementById('artist-page');
+		const base = (baseEl?.dataset.base || '/').replace(/\/+$/, '');
+		let rest = path;
+		if (base && rest.startsWith(base)) rest = rest.slice(base.length);
+		rest = rest.replace(/^\/+/, '');
+		const seg = rest.split('/')[0] || '';
+		if (seg === '__artist__') return ''; // 占位路径
+		const reserved = new Set(['', 'about', 'collections', 'upload', 'artists']);
+		if (reserved.has(seg)) return '';
+		return seg;
+	}
+
+	function renderGrid(photos: PhotoEntry[]) {
+		const grid = document.getElementById('photo-grid');
+		if (!grid) return;
+		teardownGallery();
+		grid.innerHTML = '';
+		grid.removeAttribute('style');
+		for (const p of photos) {
+			const a = document.createElement('a');
+			a.className = 'photo-item glightbox absolute transition-transform hover:scale-[1.02] hover:z-10';
+			a.href = deliveryUrl(p, { width: 2000 });
+			a.dataset.gallery = 'gallery1';
+			a.dataset.type = 'image';
+			if (p.meta.description) {
+				a.dataset.glightbox = `title: ${p.meta.description}`;
+			}
+
+			const img = document.createElement('img');
+			img.src = deliveryUrl(p, { width: 800 });
+			img.srcset = srcSet(p);
+			img.sizes = '(max-width: 768px) 50vw, 33vw';
+			img.alt = p.meta.title || '';
+			img.width = p.width;
+			img.height = p.height;
+			img.loading = 'lazy';
+			img.className = 'w-full h-full object-cover rounded-sm shadow-sm hover:shadow-lg transition-shadow';
+			a.appendChild(img);
+			grid.appendChild(a);
+		}
+		setupGallery();
+	}
+
+	(window as any).artistPage = artistPage;
+	document.addEventListener('alpine:init', () => {
+		(window as any).Alpine?.data('artistPage', artistPage);
+	});
+</script>

@@ -1,0 +1,447 @@
+---
+import MainLayout from '../layouts/MainLayout.astro';
+---
+
+<MainLayout>
+	<section class="pt-32 pb-20">
+		<div class="container-custom max-w-3xl mx-auto">
+			<div class="text-center mb-12">
+				<h1 class="text-4xl md:text-5xl font-bold mb-4">分享你的作品</h1>
+				<p class="text-gray-600">
+					填写名字 + 联系方式 → 选作品集 → 上传图片，无需注册。 别人在
+					<code class="px-2 py-0.5 bg-gray-100 rounded text-sm">/&lt;你的-slug&gt;</code> 即可看到你的作品。
+				</p>
+			</div>
+
+			<div id="upload-app" x-data="uploadApp()" x-init="init()" class="space-y-8">
+				<!-- mode 提示 -->
+				<template x-if="mode === 'mock'">
+					<div class="border border-blue-200 bg-blue-50 text-blue-900 p-4 rounded-lg text-sm">
+						🎨 <strong>演示模式</strong> — 当前未配置 Supabase。上传会模拟成功并保存到本地浏览器（localStorage），
+						刷新后仍可在 <code>/&lt;slug&gt;</code> 看到。要真实部署请按 README 配置 Supabase。
+					</div>
+				</template>
+
+				<!-- STEP 1: 身份 -->
+				<section class="border border-gray-200 rounded-lg p-6">
+					<div class="flex items-center mb-4">
+						<span
+							class="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center text-sm font-semibold mr-3"
+							>1</span
+						>
+						<h2 class="text-xl font-semibold">你是谁</h2>
+					</div>
+					<div class="space-y-4">
+						<div>
+							<label class="block text-sm text-gray-600 mb-1">显示名 *</label>
+							<input
+								type="text"
+								x-model="artistName"
+								@input="recomputeSlug()"
+								placeholder="你的名字 / 笔名"
+								class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-black"
+							/>
+							<p class="text-xs text-gray-500 mt-1.5" x-show="artistSlug">
+								你的页面地址：<code class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono" x-text="`/${artistSlug}/`"></code>
+							</p>
+						</div>
+						<div>
+							<label class="block text-sm text-gray-600 mb-1">联系方式 *</label>
+							<input
+								type="text"
+								x-model="artistContact"
+								placeholder="email@example.com 或 @your_ig 或 https://..."
+								class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-black"
+							/>
+							<p class="text-xs text-gray-500 mt-1">将公开展示在你的页面上，方便他人联系</p>
+						</div>
+					</div>
+				</section>
+
+				<!-- STEP 2: 作品集 -->
+				<section
+					class="border border-gray-200 rounded-lg p-6"
+					:class="step1Done ? '' : 'opacity-60'"
+				>
+					<div class="flex items-center mb-4">
+						<span
+							class="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center text-sm font-semibold mr-3"
+							>2</span
+						>
+						<h2 class="text-xl font-semibold">作品集</h2>
+					</div>
+					<div class="space-y-4">
+						<div>
+							<label class="block text-sm text-gray-600 mb-1">作品集名 *</label>
+							<input
+								type="text"
+								x-model="collectionName"
+								@input="recomputeCollSlug()"
+								placeholder="作品集名称（如：人像 / 街拍 / 旅行）"
+								class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-black"
+							/>
+							<p class="text-xs text-gray-500 mt-1.5">同一作品集名下的图片会被分到同一个标签页里</p>
+						</div>
+					</div>
+				</section>
+
+				<!-- STEP 3: 选图 -->
+				<section
+					class="border border-gray-200 rounded-lg p-6"
+					:class="step2Done ? '' : 'opacity-60'"
+				>
+					<div class="flex items-center mb-4">
+						<span
+							class="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center text-sm font-semibold mr-3"
+							>3</span
+						>
+						<h2 class="text-xl font-semibold">选择图片</h2>
+					</div>
+
+					<label
+						class="block border-2 border-dashed border-gray-300 hover:border-gray-500 rounded-lg p-12 text-center cursor-pointer transition-colors"
+						:class="dragOver ? 'border-black bg-gray-50' : ''"
+						@dragover.prevent="dragOver = true"
+						@dragleave.prevent="dragOver = false"
+						@drop.prevent="dragOver = false; addFiles($event.dataTransfer.files)"
+					>
+						<input
+							type="file"
+							accept="image/*"
+							multiple
+							class="sr-only"
+							@change="addFiles($event.target.files); $event.target.value = ''"
+						/>
+						<div class="text-gray-500">
+							<svg class="mx-auto h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M7 16a4 4 0 01-.88-7.9 5 5 0 019.9-1A5.5 5.5 0 0118 16M9 19l3-3m0 0l3 3m-3-3v6"></path>
+							</svg>
+							<p class="font-medium">点击选择图片，或拖拽到此</p>
+							<p class="text-sm mt-1">支持多选 · JPG/PNG/WebP</p>
+						</div>
+					</label>
+
+					<!-- 文件列表 -->
+					<div class="mt-6 space-y-3" x-show="files.length > 0">
+						<template x-for="(f, idx) in files" :key="f.id">
+							<div class="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4 border border-gray-200 rounded p-3">
+								<img :src="f.preview" class="w-full sm:w-24 h-40 sm:h-24 object-cover rounded" />
+								<div class="flex-1 space-y-2">
+									<input
+										type="text"
+										x-model="f.title"
+										placeholder="标题"
+										class="w-full px-2 py-1 text-sm border border-gray-200 rounded"
+									/>
+									<input
+										type="text"
+										x-model="f.description"
+										placeholder="描述（可选）"
+										class="w-full px-2 py-1 text-sm border border-gray-200 rounded"
+									/>
+									<div class="flex items-center justify-between text-xs text-gray-500">
+										<span x-text="`${(f.size / 1024 / 1024).toFixed(2)} MB`"></span>
+										<div class="flex items-center gap-3">
+											<span x-show="f.status === 'uploading'" class="text-blue-600">
+												上传中 <span x-text="f.progress + '%'"></span>
+											</span>
+											<span x-show="f.status === 'done'" class="text-green-600">✓ 已上传</span>
+											<span x-show="f.status === 'error'" class="text-red-600" x-text="f.error"></span>
+											<button
+												x-show="f.status === 'idle' || f.status === 'error'"
+												@click="removeFile(idx)"
+												class="text-gray-400 hover:text-red-600">移除</button>
+										</div>
+									</div>
+								</div>
+							</div>
+						</template>
+					</div>
+				</section>
+
+				<!-- 上传按钮 -->
+				<div class="flex items-center justify-between gap-4">
+					<button
+						class="flex-1 py-3 bg-black text-white rounded font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+						:disabled="!canUpload"
+						@click="startUpload()"
+					>
+						<span x-show="!uploading && pendingCount > 0 && step2Done" x-text="`发布 ${pendingCount} 张作品`"></span>
+						<span x-show="!uploading && pendingCount > 0 && !step2Done" class="text-xs">请先填完上方的姓名/联系方式/作品集</span>
+						<span x-show="!uploading && pendingCount === 0">先选几张图</span>
+						<span x-show="uploading">上传中…</span>
+					</button>
+					<a
+						x-show="doneCount > 0 && !uploading"
+						:href="artistViewHref"
+						class="px-6 py-3 border border-black rounded font-medium hover:bg-gray-50"
+					>
+						查看我的页面 →
+					</a>
+				</div>
+
+				<p class="text-xs text-gray-500 text-center" x-show="doneCount > 0">
+					已上传 <span x-text="doneCount"></span> 张
+					<span x-show="mode === 'live'">· 由于 CDN 缓存，公开页面最长延迟 1 分钟显示</span>
+					<span x-show="mode === 'mock'">· 数据仅保存在本浏览器，换设备不可见</span>
+				</p>
+			</div>
+		</div>
+	</section>
+</MainLayout>
+
+<script>
+	import {
+		getMode,
+		isValidSlug,
+		saveMockUpload,
+		toSlug,
+		uploadPhoto,
+		type PhotoEntry,
+		type PhotoMeta,
+	} from '../lib/photos';
+
+	interface FileItem {
+		id: string;
+		file: File;
+		preview: string;
+		title: string;
+		description: string;
+		size: number;
+		status: 'idle' | 'uploading' | 'done' | 'error';
+		progress: number;
+		error: string;
+	}
+
+	const STORAGE_KEY = 'pf:identity:v1';
+	const COLL_KEY = 'pf:lastColl:v1';
+	const MOCK_DATA_URL_LIMIT = 800 * 1024; // mock 模式下仅 < 800KB 的文件存 base64
+
+	function uploadApp() {
+		const base = (import.meta.env.BASE_URL as string).replace(/\/+$/, '');
+
+		return {
+			mode: getMode() as 'live' | 'mock',
+			base,
+			artistName: '',
+			artistSlug: '',
+			artistContact: '',
+			collectionName: '',
+			collectionSlug: '',
+			files: [] as FileItem[],
+			uploading: false,
+			dragOver: false,
+
+			init() {
+				try {
+					const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+					if (saved) {
+						this.artistName = saved.artistName || '';
+						this.artistSlug = saved.artistSlug || '';
+						this.artistContact = saved.artistContact || '';
+						// slug 字段已对用户隐藏，把 saved 视作自动生成的 → 后续改名时会重算
+						this._lastAutoSlug = this.artistSlug;
+					}
+					const lastColl = JSON.parse(localStorage.getItem(COLL_KEY) || 'null');
+					if (lastColl) {
+						this.collectionName = lastColl.name || '';
+						this.collectionSlug = lastColl.slug || '';
+						this._lastAutoCollSlug = this.collectionSlug;
+					}
+				} catch {}
+			},
+
+			recomputeSlug() {
+				if (!this.artistSlug || this._lastAutoSlug === this.artistSlug) {
+					this.artistSlug = toSlug(this.artistName);
+					this._lastAutoSlug = this.artistSlug;
+				}
+			},
+			recomputeCollSlug() {
+				if (!this.collectionSlug || this._lastAutoCollSlug === this.collectionSlug) {
+					this.collectionSlug = toSlug(this.collectionName);
+					this._lastAutoCollSlug = this.collectionSlug;
+				}
+			},
+			_lastAutoSlug: '',
+			_lastAutoCollSlug: '',
+
+			get step1Done() {
+				return (
+					this.artistName.trim().length > 0 &&
+					isValidSlug(this.artistSlug) &&
+					this.artistContact.trim().length > 0
+				);
+			},
+			get step2Done() {
+				return (
+					this.step1Done &&
+					this.collectionName.trim().length > 0 &&
+					isValidSlug(this.collectionSlug)
+				);
+			},
+			get pendingCount() {
+				return this.files.filter((f: FileItem) => f.status === 'idle').length;
+			},
+			get doneCount() {
+				return this.files.filter((f: FileItem) => f.status === 'done').length;
+			},
+			get canUpload() {
+				return this.step2Done && this.pendingCount > 0 && !this.uploading;
+			},
+			get artistViewHref() {
+				if (this.mode === 'mock' && location.hostname === 'localhost') {
+					return `${this.base}/__artist__/?slug=${this.artistSlug}`;
+				}
+				return `${this.base}/${this.artistSlug}/`;
+			},
+
+			addFiles(list: FileList | null) {
+				if (!list) return;
+				for (const file of Array.from(list)) {
+					if (!file.type.startsWith('image/')) continue;
+					this.files.push({
+						id: Math.random().toString(36).slice(2),
+						file,
+						preview: URL.createObjectURL(file),
+						title: stripExt(file.name),
+						description: '',
+						size: file.size,
+						status: 'idle',
+						progress: 0,
+						error: '',
+					});
+				}
+			},
+			removeFile(idx: number) {
+				const f = this.files[idx];
+				if (f.preview) URL.revokeObjectURL(f.preview);
+				this.files.splice(idx, 1);
+			},
+
+			async startUpload() {
+				if (!this.canUpload) return;
+				this.uploading = true;
+
+				localStorage.setItem(
+					STORAGE_KEY,
+					JSON.stringify({
+						artistName: this.artistName,
+						artistSlug: this.artistSlug,
+						artistContact: this.artistContact,
+					}),
+				);
+				localStorage.setItem(
+					COLL_KEY,
+					JSON.stringify({ name: this.collectionName, slug: this.collectionSlug }),
+				);
+
+				for (const item of this.files) {
+					if (item.status !== 'idle') continue;
+					const meta: PhotoMeta = {
+						artistName: this.artistName.trim(),
+						artistContact: this.artistContact.trim(),
+						collectionName: this.collectionName.trim(),
+						title: item.title.trim(),
+						description: item.description.trim(),
+					};
+					try {
+						item.status = 'uploading';
+						item.progress = 0;
+						if (this.mode === 'mock') {
+							await mockUploadOne(item, {
+								artistSlug: this.artistSlug,
+								collectionSlug: this.collectionSlug,
+								meta,
+							});
+						} else {
+							const { width, height } = await readImageMeta(item.file);
+							await uploadPhoto(item.file, {
+								artistSlug: this.artistSlug,
+								collectionSlug: this.collectionSlug,
+								meta,
+								width,
+								height,
+								onProgress: (p) => {
+									item.progress = p;
+								},
+							});
+						}
+						item.status = 'done';
+						item.progress = 100;
+					} catch (err: any) {
+						item.status = 'error';
+						item.error = err?.message || '上传失败';
+					}
+				}
+				this.uploading = false;
+			},
+		};
+	}
+
+	function stripExt(name: string) {
+		return name.replace(/\.[^.]+$/, '').slice(0, 50) || 'untitled';
+	}
+
+	function readImageMeta(
+		file: File,
+	): Promise<{ width: number; height: number; dataUrl: string }> {
+		return new Promise((resolve, reject) => {
+			const r = new FileReader();
+			r.onerror = () => reject(new Error('无法读取文件'));
+			r.onload = () => {
+				const dataUrl = r.result as string;
+				const img = new Image();
+				img.onerror = () => reject(new Error('无法解析图片'));
+				img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight, dataUrl });
+				img.src = dataUrl;
+			};
+			r.readAsDataURL(file);
+		});
+	}
+
+	async function mockUploadOne(
+		item: FileItem,
+		opts: { artistSlug: string; collectionSlug: string; meta: PhotoMeta },
+	) {
+		const { width, height, dataUrl } = await readImageMeta(item.file);
+
+		// 模拟上传进度
+		await new Promise<void>((resolve) => {
+			let p = 0;
+			const tick = () => {
+				p = Math.min(100, p + 8 + Math.random() * 18);
+				item.progress = Math.round(p);
+				if (p >= 100) resolve();
+				else setTimeout(tick, 80 + Math.random() * 140);
+			};
+			tick();
+		});
+
+		const id = `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const entry: PhotoEntry = {
+			id,
+			width,
+			height,
+			format: item.file.type.split('/')[1] || 'jpg',
+			createdAt: new Date().toISOString(),
+			artistSlug: opts.artistSlug,
+			collectionSlug: opts.collectionSlug,
+			storagePath: '',
+			meta: opts.meta,
+			...(item.file.size <= MOCK_DATA_URL_LIMIT
+				? { dataUrl }
+				: { mockSeed: `${opts.artistSlug}-${Math.random().toString(36).slice(2, 8)}` }),
+		};
+		saveMockUpload(entry);
+	}
+
+	(window as any).uploadApp = uploadApp;
+	document.addEventListener('alpine:init', () => {
+		(window as any).Alpine?.data('uploadApp', uploadApp);
+	});
+</script>
