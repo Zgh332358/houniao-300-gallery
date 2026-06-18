@@ -19,7 +19,7 @@ export default {
 	title: '候鸟 300',
 	owner: '候鸟 300',
 	tagline: '候鸟 300 艺术家驻地 · 线上作品展示平台',
-	favicon: 'favicon.ico',
+	favicon: 'favicon.svg',
 
 	// Supabase 配置（live 模式 — 多端同步）
 	supabase: {
