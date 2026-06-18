@@ -1,0 +1,1 @@
+import{l as a,g as n,d as o}from"./photos.Bt6R_T6E.js";function i(){return{loading:!0,artists:[],async init(){const s=await a();this.artists=n(s).map(t=>({slug:t.slug,name:t.name,photoCount:t.photoCount,coverUrl:o(t.coverPhoto,{width:800})})),this.loading=!1}}}window.artistsListPage=i;document.addEventListener("alpine:init",()=>{window.Alpine?.data("artistsListPage",i)});
