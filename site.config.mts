@@ -21,10 +21,11 @@ export default {
 	tagline: '候鸟 300 艺术家驻地 · 线上作品展示平台',
 	favicon: 'favicon.ico',
 
-	// Supabase 配置（部署时把占位值替换成真实值）
+	// Supabase 配置（live 模式 — 多端同步）
 	supabase: {
-		url: 'YOUR_SUPABASE_URL',
-		anonKey: 'YOUR_SUPABASE_ANON_KEY',
+		url: 'https://efvfkoxoilkqfsuuladv.supabase.co',
+		anonKey:
+			'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmdmZrb3hvaWxrcWZzdXVsYWR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NzI1NDYsImV4cCI6MjA5NzM0ODU0Nn0.rLkYGFgtPmVg1xdXvZdraLTe7tYh4ZniV1HJtWEeHQY',
 		bucket: 'photos',
 	} as SupabaseConfig,
 
