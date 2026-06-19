@@ -22,6 +22,70 @@ import MainLayout from '../layouts/MainLayout.astro';
 					</div>
 				</template>
 
+				<!-- AI 设置：自带 API Key -->
+				<section class="border rounded-lg p-6" :class="aiOn ? 'border-violet-200 bg-violet-50/40' : 'border-gray-200'">
+					<div class="flex items-center justify-between mb-1">
+						<div class="flex items-center gap-2">
+							<span class="text-lg">✨</span>
+							<h2 class="text-xl font-semibold">AI 作品助手</h2>
+							<span
+								class="text-xs px-2 py-0.5 rounded-full"
+								:class="aiOn ? 'bg-violet-100 text-violet-700' : 'bg-gray-100 text-gray-500'"
+								x-text="aiOn ? '已启用' : '未启用'"
+							></span>
+						</div>
+						<button
+							type="button"
+							class="text-xs text-gray-400 hover:text-gray-700"
+							@click="aiSettingsOpen = !aiSettingsOpen"
+							x-text="aiSettingsOpen ? '收起' : (aiOn ? '设置' : '展开设置')"
+						></button>
+					</div>
+					<p class="text-xs text-gray-500 mb-4">
+						填入你<strong>自己领取的 Step API Key</strong>，即可用多模态模型自动生成文案、对话润色，并在发布前做内容审核。
+						Key 只保存在你本机浏览器，不会上传到任何服务器。
+					</p>
+
+					<div x-show="aiSettingsOpen || !aiOn" class="space-y-4">
+						<div>
+							<label class="block text-sm text-gray-600 mb-1">Step API Key *</label>
+							<div class="flex gap-2">
+								<input
+									:type="showKey ? 'text' : 'password'"
+									x-model="apiKey"
+									@input="persistAi()"
+									@change="onKeyCommitted()"
+									placeholder="粘贴你的 StepFun API Key（sk-... 或一长串字符）"
+									autocomplete="off"
+									class="flex-1 px-3 py-2 border border-gray-300 rounded font-mono text-sm focus:outline-none focus:border-violet-500"
+								/>
+								<button
+									type="button"
+									@click="showKey = !showKey"
+									class="px-3 py-2 border border-gray-300 rounded text-sm text-gray-500 hover:text-gray-800"
+									x-text="showKey ? '隐藏' : '显示'"
+								></button>
+							</div>
+							<p class="text-xs text-gray-500 mt-1">
+								没有 key？去
+								<a href="https://platform.stepfun.com/" target="_blank" rel="noopener" class="underline hover:text-violet-700">StepFun 开放平台</a>
+								领取。
+							</p>
+						</div>
+						<div>
+							<label class="block text-sm text-gray-600 mb-1">模型</label>
+							<input
+								type="text"
+								x-model="model"
+								@input="persistAi()"
+								placeholder="step-3.7-flash"
+								class="w-full px-3 py-2 border border-gray-300 rounded font-mono text-sm focus:outline-none focus:border-violet-500"
+							/>
+							<p class="text-xs text-gray-500 mt-1">默认 <code>step-3.7-flash</code>（多模态）。可改成其它支持图像理解的模型。</p>
+						</div>
+					</div>
+				</section>
+
 				<!-- STEP 1: 身份 -->
 				<section class="border border-gray-200 rounded-lg p-6">
 					<div class="flex items-center mb-4">
@@ -98,6 +162,25 @@ import MainLayout from '../layouts/MainLayout.astro';
 						<h2 class="text-xl font-semibold">选择图片</h2>
 					</div>
 
+					<div class="mb-4 space-y-2">
+						<p x-show="aiOn" class="text-sm text-violet-700 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2 flex items-start gap-2">
+							<span>✨</span>
+							<span>拖入图片后，<strong x-text="model"></strong> 会自动读图、做内容审核，并生成标题 / 描述 / 标签 / 策展评语；你还能在每张图下方<strong>和模型对话</strong>来调整文案。审核未通过的作品将无法发布。</span>
+						</p>
+						<p x-show="!aiOn" class="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 flex items-start gap-2">
+							<span>🔑</span>
+							<span>想让 AI 帮你写文案、并在发布前自动审核？请先在上方
+								<button type="button" class="underline" @click="aiSettingsOpen = true">「AI 作品助手」</button>
+								填入你自己的 Step API Key。</span>
+						</p>
+						<button
+							type="button"
+							x-show="aiOn && files.some(x => x.ai.status === 'hidden')"
+							@click="analyzeAllPending()"
+							class="text-xs px-3 py-1.5 border border-violet-300 text-violet-700 rounded hover:bg-violet-50"
+						>✨ 用 AI 分析未处理的 <span x-text="files.filter(x => x.ai.status === 'hidden').length"></span> 张</button>
+					</div>
+
 					<label
 						class="block border-2 border-dashed border-gray-300 hover:border-gray-500 rounded-lg p-12 text-center cursor-pointer transition-colors"
 						:class="dragOver ? 'border-black bg-gray-50' : ''"
@@ -134,15 +217,142 @@ import MainLayout from '../layouts/MainLayout.astro';
 									<input
 										type="text"
 										x-model="f.title"
+										@input="f.titleEdited = true"
 										placeholder="标题"
 										class="w-full px-2 py-1 text-sm border border-gray-200 rounded"
 									/>
 									<input
 										type="text"
 										x-model="f.description"
+										@input="f.descEdited = true"
 										placeholder="描述（可选）"
 										class="w-full px-2 py-1 text-sm border border-gray-200 rounded"
 									/>
+
+									<!-- ✨ Step 作品助手 -->
+									<div x-show="f.ai.status !== 'hidden'" class="border-t border-gray-100 pt-2">
+										<!-- 分析中 -->
+										<div x-show="f.ai.status === 'loading'" class="flex items-center gap-2 text-xs text-violet-600">
+											<svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+												<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+												<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path>
+											</svg>
+											<span>模型正在读这张作品并做审核…</span>
+										</div>
+
+										<!-- 失败 -->
+										<div x-show="f.ai.status === 'error'" class="flex items-center gap-2 text-xs text-red-500">
+											<span x-text="f.ai.error"></span>
+											<button @click="analyzeOne(f)" class="underline hover:text-red-700">重试</button>
+										</div>
+
+										<!-- 完成 -->
+										<div x-show="f.ai.status === 'done'" class="space-y-2">
+											<div class="flex items-center gap-2 text-xs">
+												<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">✨ <span x-text="model"></span></span>
+												<button @click="analyzeOne(f)" class="ml-auto text-gray-400 hover:text-violet-600">↻ 重新生成</button>
+											</div>
+
+											<!-- 内容审核结果（门控发布） -->
+											<div
+												x-show="f.moderation && f.moderation.safe === false"
+												class="flex items-start gap-2 text-xs bg-red-50 border border-red-200 text-red-700 rounded p-2"
+											>
+												<span>⛔</span>
+												<span>
+													<strong>内容审核未通过，该作品无法发布。</strong>
+													<span x-show="f.moderation && f.moderation.reason" x-text="'　' + (f.moderation ? f.moderation.reason : '')"></span>
+													<template x-if="f.moderation && f.moderation.categories && f.moderation.categories.length">
+														<span> · <span x-text="f.moderation.categories.join('、')"></span></span>
+													</template>
+												</span>
+											</div>
+											<div
+												x-show="f.moderation && f.moderation.safe !== false"
+												class="flex items-center gap-1 text-xs text-green-600"
+											>
+												✓ 内容审核通过
+											</div>
+
+											<!-- 标签 -->
+											<div class="flex flex-wrap gap-1.5">
+												<template x-for="t in tagList(f.ai.suggestion)" :key="t.k">
+													<span class="px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 text-xs border border-violet-100" x-text="t.v"></span>
+												</template>
+											</div>
+
+											<!-- 策展人评语 -->
+											<p
+												x-show="f.ai.suggestion && f.ai.suggestion.curatorNote"
+												class="text-xs text-gray-600 italic border-l-2 border-violet-200 pl-2"
+											>
+												“<span x-text="f.ai.suggestion.curatorNote"></span>” —— AI 策展助理
+											</p>
+
+											<!-- 思考过程（秀多模态推理） -->
+											<div x-show="f.ai.reasoning">
+												<button
+													@click="f.ai.showReasoning = !f.ai.showReasoning"
+													class="text-xs text-gray-400 hover:text-gray-600"
+												>
+													🧠 <span x-text="f.ai.showReasoning ? '收起思考过程' : '看它怎么想的'"></span>
+												</button>
+												<pre
+													x-show="f.ai.showReasoning"
+													class="mt-1 text-[11px] leading-relaxed text-gray-500 whitespace-pre-wrap bg-gray-50 rounded p-2 max-h-40 overflow-auto"
+													x-text="f.ai.reasoning"
+												></pre>
+											</div>
+
+											<!-- 💬 和模型对话调整文案 -->
+											<div class="pt-1">
+												<button
+													@click="f.chat.open = !f.chat.open"
+													class="text-xs text-violet-600 hover:text-violet-800 font-medium"
+												>
+													💬 <span x-text="f.chat.open ? '收起对话' : '和模型聊聊，调整文案'"></span>
+												</button>
+												<div x-show="f.chat.open" class="mt-2 border border-violet-100 rounded-lg bg-white overflow-hidden">
+													<div class="max-h-52 overflow-auto p-2 space-y-2">
+														<div
+															x-show="f.chat.msgs.length === 0 && !f.chat.busy"
+															class="text-xs text-gray-400 leading-relaxed"
+														>
+															例如：「标题更冷峻一点」「描述里强调光影」「换个更年轻的语气」「这张其实是夜景，重写一下」
+														</div>
+														<template x-for="(m, mi) in f.chat.msgs" :key="mi">
+															<div :class="m.role === 'user' ? 'text-right' : 'text-left'">
+																<span
+																	class="inline-block px-2.5 py-1.5 rounded-2xl text-xs max-w-[85%] whitespace-pre-wrap text-left"
+																	:class="m.role === 'user' ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-700'"
+																	x-text="m.text"
+																></span>
+															</div>
+														</template>
+														<div x-show="f.chat.busy" class="text-left">
+															<span class="inline-block px-2.5 py-1.5 rounded-2xl text-xs bg-gray-100 text-gray-400">模型思考中…</span>
+														</div>
+													</div>
+													<div class="flex gap-2 border-t border-gray-100 p-2">
+														<input
+															type="text"
+															x-model="f.chat.input"
+															@keydown.enter.prevent="sendChat(f)"
+															:disabled="f.chat.busy"
+															placeholder="告诉模型你想怎么改…"
+															class="flex-1 px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:border-violet-400"
+														/>
+														<button
+															@click="sendChat(f)"
+															:disabled="f.chat.busy || !f.chat.input.trim()"
+															class="px-3 py-1 text-sm bg-violet-600 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed"
+														>发送</button>
+													</div>
+												</div>
+											</div>
+										</div>
+									</div>
+
 									<div class="flex items-center justify-between text-xs text-gray-500">
 										<span x-text="`${(f.size / 1024 / 1024).toFixed(2)} MB`"></span>
 										<div class="flex items-center gap-3">
@@ -170,9 +380,11 @@ import MainLayout from '../layouts/MainLayout.astro';
 						:disabled="!canUpload"
 						@click="startUpload()"
 					>
-						<span x-show="!uploading && pendingCount > 0 && step2Done" x-text="`发布 ${pendingCount} 张作品`"></span>
-						<span x-show="!uploading && pendingCount > 0 && !step2Done" class="text-xs">请先填完上方的姓名/联系方式/作品集</span>
 						<span x-show="!uploading && pendingCount === 0">先选几张图</span>
+						<span x-show="!uploading && pendingCount > 0 && !step2Done" class="text-xs">请先填完上方的姓名/联系方式/作品集</span>
+						<span x-show="!uploading && pendingCount > 0 && step2Done && aiAnalyzing" class="text-xs">⏳ AI 审核中，请稍候…</span>
+						<span x-show="!uploading && pendingCount > 0 && step2Done && !aiAnalyzing && aiBlocked" class="text-xs">⛔ 有作品未通过审核，移除后再发布</span>
+						<span x-show="!uploading && pendingCount > 0 && step2Done && !aiAnalyzing && !aiBlocked" x-text="`发布 ${pendingCount} 张作品`"></span>
 						<span x-show="uploading">上传中…</span>
 					</button>
 					<a
@@ -204,6 +416,31 @@ import MainLayout from '../layouts/MainLayout.astro';
 		type PhotoEntry,
 		type PhotoMeta,
 	} from '../lib/photos';
+	import {
+		analyzePhoto,
+		chatRevise,
+		getAiConfig,
+		setAiConfig,
+		type AiSuggestion,
+		type Moderation,
+	} from '../lib/ai';
+
+	interface AiState {
+		status: 'hidden' | 'loading' | 'done' | 'error';
+		suggestion: AiSuggestion | null;
+		reasoning: string;
+		error: string;
+		showReasoning: boolean;
+	}
+
+	interface ChatState {
+		open: boolean;
+		busy: boolean;
+		input: string;
+		msgs: { role: 'user' | 'assistant'; text: string }[];
+		/** 传给模型的内部对话上下文（含首轮图片），不直接展示 */
+		history: any[];
+	}
 
 	interface FileItem {
 		id: string;
@@ -211,10 +448,15 @@ import MainLayout from '../layouts/MainLayout.astro';
 		preview: string;
 		title: string;
 		description: string;
+		titleEdited: boolean;
+		descEdited: boolean;
 		size: number;
 		status: 'idle' | 'uploading' | 'done' | 'error';
 		progress: number;
 		error: string;
+		ai: AiState;
+		moderation: Moderation | null;
+		chat: ChatState;
 	}
 
 	const STORAGE_KEY = 'pf:identity:v1';
@@ -235,6 +477,11 @@ import MainLayout from '../layouts/MainLayout.astro';
 			files: [] as FileItem[],
 			uploading: false,
 			dragOver: false,
+			// BYOK：艺术家自带的 Step API Key / 模型
+			apiKey: getAiConfig().apiKey,
+			model: getAiConfig().model,
+			showKey: false,
+			aiSettingsOpen: false,
 
 			init() {
 				try {
@@ -290,8 +537,30 @@ import MainLayout from '../layouts/MainLayout.astro';
 			get doneCount() {
 				return this.files.filter((f: FileItem) => f.status === 'done').length;
 			},
+			get aiOn() {
+				return this.apiKey.trim().length > 0;
+			},
+			/** 有待发布的图仍在 AI 审核中 */
+			get aiAnalyzing() {
+				if (!this.aiOn) return false;
+				return this.files.some((f: FileItem) => f.status === 'idle' && f.ai.status === 'loading');
+			},
+			/** 有待发布的图被判定为不适合传播 */
+			get aiBlocked() {
+				if (!this.aiOn) return false;
+				return this.files.some(
+					(f: FileItem) => f.status === 'idle' && f.moderation && f.moderation.safe === false,
+				);
+			},
 			get canUpload() {
-				return this.step2Done && this.pendingCount > 0 && !this.uploading;
+				if (!(this.step2Done && this.pendingCount > 0 && !this.uploading)) return false;
+				if (this.aiOn) {
+					// 开启 AI 时：待发布的每张图都必须完成审核且通过，否则不允许发布
+					const pending = this.files.filter((f: FileItem) => f.status === 'idle');
+					if (pending.some((f: FileItem) => f.ai.status !== 'done')) return false;
+					if (this.aiBlocked) return false;
+				}
+				return true;
 			},
 			get artistViewHref() {
 				if (this.mode === 'mock' && location.hostname === 'localhost') {
@@ -310,13 +579,126 @@ import MainLayout from '../layouts/MainLayout.astro';
 						preview: URL.createObjectURL(file),
 						title: stripExt(file.name),
 						description: '',
+						titleEdited: false,
+						descEdited: false,
 						size: file.size,
 						status: 'idle',
 						progress: 0,
 						error: '',
+						ai: {
+							status: this.aiOn ? 'loading' : 'hidden',
+							suggestion: null,
+							reasoning: '',
+							error: '',
+							showReasoning: false,
+						},
+						moderation: null,
+						chat: { open: false, busy: false, input: '', msgs: [], history: [] },
 					});
+					// 取回 Alpine 包装后的响应式引用再异步分析，确保 UI 更新
+					if (this.aiOn) {
+						const ref = this.files[this.files.length - 1];
+						this.analyzeOne(ref);
+					}
 				}
 			},
+
+			persistAi() {
+				setAiConfig({ apiKey: this.apiKey, model: this.model });
+			},
+			/** key 输入框失焦时：保存，并自动分析尚未处理的图 */
+			onKeyCommitted() {
+				this.persistAi();
+				if (this.aiOn) this.analyzeAllPending();
+			},
+			analyzeAllPending() {
+				if (!this.aiOn) return;
+				for (const f of this.files) {
+					if (f.status === 'idle' && (f.ai.status === 'hidden' || f.ai.status === 'error')) {
+						this.analyzeOne(f);
+					}
+				}
+			},
+
+			async analyzeOne(f: FileItem) {
+				if (!this.aiOn) {
+					f.ai.status = 'hidden';
+					return;
+				}
+				f.ai.status = 'loading';
+				f.ai.error = '';
+				const r = await analyzePhoto(f.file);
+				if (!r.ok) {
+					f.ai.status = 'error';
+					f.ai.error = r.error;
+					return;
+				}
+				f.ai.suggestion = r.suggestion;
+				f.ai.reasoning = r.reasoning;
+				f.moderation = r.moderation;
+				f.chat.history = r.history;
+				f.chat.msgs = r.reply ? [{ role: 'assistant', text: r.reply }] : [];
+				f.ai.status = 'done';
+				// 仅在用户尚未手动改过时，用 AI 建议填充
+				if (!f.titleEdited && r.suggestion.title) f.title = r.suggestion.title;
+				if (!f.descEdited && r.suggestion.description) f.description = r.suggestion.description;
+			},
+
+			async sendChat(f: FileItem) {
+				const text = f.chat.input.trim();
+				if (!text || f.chat.busy) return;
+				f.chat.msgs.push({ role: 'user', text });
+				f.chat.input = '';
+				f.chat.busy = true;
+
+				// 以表单当前实际值为准，让模型在艺术家手改后的版本上调整
+				const cur: AiSuggestion = {
+					title: f.title,
+					description: f.description,
+					curatorNote: f.ai.suggestion?.curatorNote || '',
+					tags: f.ai.suggestion?.tags || {
+						theme: '',
+						style: '',
+						medium: '',
+						palette: '',
+						mood: '',
+					},
+				};
+
+				const r = await chatRevise(f.chat.history, text, cur);
+				f.chat.busy = false;
+				if (!r.ok) {
+					f.chat.msgs.push({ role: 'assistant', text: '⚠️ ' + r.error });
+					return;
+				}
+				f.chat.history = r.history;
+				f.ai.suggestion = r.suggestion;
+				if (r.reasoning) f.ai.reasoning = r.reasoning;
+				if (r.moderation) f.moderation = r.moderation;
+				// 对话是明确的修改意图 → 直接应用到表单，并标记为已编辑防止被覆盖
+				if (r.suggestion.title) {
+					f.title = r.suggestion.title;
+					f.titleEdited = true;
+				}
+				if (r.suggestion.description) {
+					f.description = r.suggestion.description;
+					f.descEdited = true;
+				}
+				f.chat.msgs.push({ role: 'assistant', text: r.reply });
+			},
+
+			tagList(s: AiSuggestion | null) {
+				if (!s) return [];
+				const t = s.tags;
+				return [
+					{ k: 'theme', v: t.theme },
+					{ k: 'style', v: t.style },
+					{ k: 'medium', v: t.medium },
+					{ k: 'palette', v: t.palette },
+					{ k: 'mood', v: t.mood },
+				].filter((x) => x.v);
+			},
+
 			removeFile(idx: number) {
 				const f = this.files[idx];
 				if (f.preview) URL.revokeObjectURL(f.preview);
@@ -342,6 +724,8 @@ import MainLayout from '../layouts/MainLayout.astro';
 
 				for (const item of this.files) {
 					if (item.status !== 'idle') continue;
+					// 内容审核未通过的不发布
+					if (this.aiOn && item.moderation && item.moderation.safe === false) continue;
 					const meta: PhotoMeta = {
 						artistName: this.artistName.trim(),
 						artistContact: this.artistContact.trim(),

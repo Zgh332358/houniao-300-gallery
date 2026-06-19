@@ -17,6 +17,7 @@
 - 在线上传：拖拽 + 标题/描述编辑 + 进度条
 - 瀑布流展示：justified-layout 自适应排版 + GLightbox 灯箱
 - 内置 mock 模式：未配置 Supabase 时自动用预设种子数据演示 UI
+- **✨ AI 作品助手（已上线 · 自带 Key）**：艺术家填入自己领取的 Step API Key，上传时 Step 3.7 Flash 自动读图生成标题 / 描述 / 标签 / 策展评语，可**和模型对话**继续打磨文案，并在**发布前做内容审核**（成人/赌博/毒品/广告等不予发布）。见下方[专章](#-ai-作品助手step-37-flash)
 - **AI 作品检索（开发中）**：右侧抽屉式入口，调用 Step 3.7 Flash 按自然语言查找作品
 
 ## 🚀 快速上手
@@ -130,6 +131,46 @@ git push
 ```
 
 GitHub Actions（仓库自带 `.github/workflows/deploy.yml`）会自动构建 + 部署。
+
+## ✨ AI 作品助手（Step 3.7 Flash）
+
+每位艺术家在 `/upload` 顶部填入**自己领取的 Step API Key**（默认模型 `step-3.7-flash`），
+拖图即触发多模态模型读图。能力：
+
+| 能力 | 说明 |
+|---|---|
+| 标题 / 描述 | 自动填进表单，可改 |
+| 标签 | 主题 · 风格 · 媒介 · 主色调 · 情绪 五维 chip |
+| 策展评语 | 一句有审美判断的短评 |
+| 🧠 思考过程 | 可展开，看模型怎么读这张画（`reasoning_content`） |
+| 💬 对话调整 | 每张图下方有聊天框，「标题更冷峻些」「强调光影」等，模型据此重写文案 |
+| 🛡 内容审核 | 同一次调用判定成人 / 赌博 / 毒品 / 暴力 / 广告等；命中则**禁止发布**（门控发布按钮） |
+
+### 架构：BYOK 直连，无需任何后端
+
+StepFun 接口对浏览器开放 CORS，所以前端**直接**用艺术家自己的 key 调用，不经过我们任何服务器：
+
+```
+浏览器 ──(用户自己的 key)──▶ https://api.stepfun.com/step_plan/v1/chat/completions
+```
+
+- key 只存在该用户本机的 `localStorage`，纯静态站即可，GitHub Pages 零改动。
+- 接口为 OpenAI 兼容协议，vision 走 `image_url` + base64 data URL（前端会先把图下采样到长边 ≤1024）。
+- 全部逻辑在 [`src/lib/ai.ts`](src/lib/ai.ts)：`analyzePhoto`（首轮读图+审核）、`chatRevise`（多轮对话）。
+
+### 本地跑
+
+```bash
+npm install
+npm run dev
+# 打开 /upload，在「AI 作品助手」填入你的 Step API Key，拖图即见效
+```
+> 没填 key 时上传功能照常可用，只是不触发 AI / 审核。
+
+### 路线图
+
+- **下一步**：把生成的标签 / 描述向量存进 Supabase（`photos` 表加 `ai_tags`、`embedding` 列 + pgvector），
+  点亮访客侧的「自然语言作品检索」——上传侧产出的元数据正是检索的燃料。
 
 ## 📐 架构概览
 
