@@ -21,3 +21,36 @@ const socialLinks = siteConfig.socialLinks;
 		</div>
 	</div>
 </footer>
+
+<script>
+	// 带 data-app-url 的链接（如小红书）：移动端优先唤起 App，唤起失败回退到网页。
+	const isMobile = () => /Android|iPhone|iPad|iPod|HarmonyOS|Mobile/i.test(navigator.userAgent);
+
+	function openAppOrWeb(appUrl: string, webUrl: string) {
+		// 桌面端没有 App，直接开网页（保持原 target=_blank 行为）
+		if (!isMobile()) {
+			window.open(webUrl, '_blank', 'noopener');
+			return;
+		}
+		let switched = false;
+		const onHide = () => {
+			if (document.visibilityState === 'hidden') switched = true;
+		};
+		document.addEventListener('visibilitychange', onHide);
+		window.setTimeout(() => {
+			document.removeEventListener('visibilitychange', onHide);
+			// 1.5s 后页面仍在前台 → App 未唤起（多半未安装）→ 回退网页
+			if (!switched) window.location.href = webUrl;
+		}, 1500);
+		// 尝试唤起 App
+		window.location.href = appUrl;
+	}
+
+	document.addEventListener('click', (e) => {
+		const a = (e.target as HTMLElement).closest('a[data-app-url]') as HTMLAnchorElement | null;
+		const appUrl = a?.dataset.appUrl;
+		if (!a || !appUrl) return;
+		e.preventDefault();
+		openAppOrWeb(appUrl, a.href);
+	});
+</script>

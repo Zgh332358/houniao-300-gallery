@@ -4,8 +4,11 @@ import Xiaohongshu from './src/components/icons/XiaohongshuIcon.astro';
 
 export interface SocialLink {
 	name: string;
+	/** 网页兜底链接（桌面端 / 未安装 App / JS 不可用时使用） */
 	url: string;
 	icon: AstroInstance;
+	/** App 深链（scheme）。填了之后，移动端点击会优先唤起 App，唤起失败再回退到 url */
+	appUrl?: string;
 }
 
 export interface SupabaseConfig {
@@ -33,8 +36,11 @@ export default {
 	socialLinks: [
 		{
 			name: '小红书',
+			// TODO: 换成候鸟 300 的主页，如 https://www.xiaohongshu.com/user/profile/<你的id>
 			url: 'https://www.xiaohongshu.com/',
 			icon: Xiaohongshu,
+			// 移动端优先唤起小红书 App。有主页后改为 xhsdiscover://user/<你的id> 可直达主页
+			appUrl: 'xhsdiscover://',
 		} as SocialLink,
 		{
 			name: 'Instagram',
