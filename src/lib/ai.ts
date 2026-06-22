@@ -386,3 +386,128 @@ export async function generateNarrationText(
 		return { ok: false, error: (e as Error).message };
 	}
 }
+
+/* ---------- 自然语言检索 (M4) ---------- */
+
+const SEARCH_SYSTEM_PROMPT = `你是一个艺术作品检索引擎。
+我会给你:
+  - 一段访客的查询(自然语言,中英都可能)
+  - 一个作品清单(JSON 数组,每个元素含 id / title / titleEn / description /
+    descriptionEn / curatorNote / tags 五维)
+
+你的任务:从清单里挑出最相关的作品(最多 9 件),按相关度从高到低排。
+输出**仅一行 JSON**,结构: {"ids": ["id1","id2",...]}
+- 不要 Markdown 代码块、不要任何解释、不要其它字段
+- 没有相关结果就返回 {"ids": []}
+- 不允许编造不在清单里的 id`;
+
+export interface SearchOk {
+	ok: true;
+	ids: string[];
+	ms: number;
+}
+export type SearchResult = SearchOk | { ok: false; error: string };
+
+export interface SearchableArtwork {
+	id: string;
+	title?: string;
+	titleEn?: string;
+	description?: string;
+	descriptionEn?: string;
+	curatorNote?: string;
+	tags?: { theme?: string; style?: string; medium?: string; palette?: string; mood?: string };
+}
+
+/**
+ * 把全量作品清单 + 用户 query 一起喂给 step-3.7-flash,只取它返回的 id 列表。
+ * 失败由调用方降级到关键词过滤兜底,保证不白屏。
+ */
+export async function searchByQuery(
+	query: string,
+	items: SearchableArtwork[],
+): Promise<SearchResult> {
+	const t0 = performance.now();
+	if (!query.trim()) return { ok: true, ids: [], ms: 0 };
+	if (items.length === 0) return { ok: true, ids: [], ms: 0 };
+	try {
+		const messages: ChatMessage[] = [
+			{ role: 'system', content: SEARCH_SYSTEM_PROMPT },
+			{
+				role: 'user',
+				content:
+					`查询: ${query.trim()}\n\n作品清单(共 ${items.length} 件):\n` +
+					JSON.stringify(items),
+			},
+		];
+		const { content } = await stepChat(messages);
+		// 解析:剥代码栅栏 / 取首个 {...}
+		let raw = (content || '').trim();
+		const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+		if (fence) raw = fence[1].trim();
+		if (!raw.startsWith('{')) {
+			const s = raw.indexOf('{');
+			const e = raw.lastIndexOf('}');
+			if (s !== -1 && e !== -1) raw = raw.slice(s, e + 1);
+		}
+		let parsed: { ids?: unknown } = {};
+		try {
+			parsed = JSON.parse(raw);
+		} catch {
+			return { ok: false, error: '模型返回不是合法 JSON' };
+		}
+		const ids = Array.isArray(parsed.ids)
+			? parsed.ids.filter((x): x is string => typeof x === 'string').slice(0, 9)
+			: [];
+		// 不允许返回不存在的 id
+		const known = new Set(items.map((it) => it.id));
+		const filtered = ids.filter((id) => known.has(id));
+		return { ok: true, ids: filtered, ms: Math.round(performance.now() - t0) };
+	} catch (e) {
+		return { ok: false, error: (e as Error).message };
+	}
+}
+
+/**
+ * 模型不可用时的关键词兜底:简单 substring 命中打分。
+ * 调用方在 searchByQuery 返回 ok=false 时切到这里,保证用户体验不黑屏。
+ */
+export function keywordFallbackSearch(
+	query: string,
+	items: SearchableArtwork[],
+	limit = 9,
+): string[] {
+	const q = query.trim().toLowerCase();
+	if (!q) return [];
+	// 把 query 拆成 token,>=2 字符的全要
+	const tokens = q
+		.split(/[\s,，、；;]+/)
+		.map((t) => t.trim())
+		.filter((t) => t.length >= 1);
+	if (!tokens.length) return [];
+
+	const scored = items.map((it) => {
+		const hay = [
+			it.title,
+			it.titleEn,
+			it.description,
+			it.descriptionEn,
+			it.curatorNote,
+			it.tags?.theme,
+			it.tags?.style,
+			it.tags?.medium,
+			it.tags?.palette,
+			it.tags?.mood,
+		]
+			.filter(Boolean)
+			.join(' ')
+			.toLowerCase();
+		let score = 0;
+		for (const t of tokens) if (hay.includes(t)) score += 1;
+		return { id: it.id, score };
+	});
+	return scored
+		.filter((s) => s.score > 0)
+		.sort((a, b) => b.score - a.score)
+		.slice(0, limit)
+		.map((s) => s.id);
+}
