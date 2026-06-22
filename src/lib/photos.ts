@@ -268,6 +268,8 @@ interface PhotoRow {
 	format: string;
 	created_at: string;
 	/** 迁移 0001 后新增,旧库可能缺 */
+	title_en?: string | null;
+	description_en?: string | null;
 	narration_text?: string | null;
 	narration_path?: string | null;
 }
@@ -289,6 +291,8 @@ function rowToEntry(row: PhotoRow): PhotoEntry {
 			description: row.description || '',
 		},
 	};
+	if (row.title_en) e.meta.titleEn = row.title_en;
+	if (row.description_en) e.meta.descriptionEn = row.description_en;
 	if (row.narration_text) e.narrationText = row.narration_text;
 	if (row.narration_path) e.narrationPath = row.narration_path;
 	return e;
@@ -309,7 +313,7 @@ export async function listAll(): Promise<PhotoEntry[]> {
 	// 第一次查会因列不存在失败,自动回退到旧字段集,保证站点不黑屏。
 	const BASE_COLS =
 		'id,artist_slug,artist_name,collection_slug,collection_name,title,description,storage_path,width,height,format,created_at';
-	const FULL_COLS = BASE_COLS + ',narration_text,narration_path';
+	const FULL_COLS = BASE_COLS + ',title_en,description_en,narration_text,narration_path';
 	let { data, error } = await sb
 		.from('photos')
 		.select(FULL_COLS)
@@ -385,23 +389,34 @@ export async function uploadPhoto(
 
 	// Step 2: 写元数据行
 	const sb = getClient();
-	const { data, error } = await sb
-		.from('photos')
-		.insert({
-			artist_slug: opts.artistSlug,
-			artist_name: opts.meta.artistName,
-			artist_contact: opts.contact,
-			collection_slug: opts.collectionSlug,
-			collection_name: opts.meta.collectionName,
-			title: opts.meta.title,
-			description: opts.meta.description,
-			storage_path: storagePath,
-			width: opts.width,
-			height: opts.height,
-			format: ext,
-		})
-		.select()
-		.single();
+	// 含新列(迁移 0001 之后才有的);未跑迁移时第一次 INSERT 会失败,自动回退到旧列集
+	const insertRow: Record<string, unknown> = {
+		artist_slug: opts.artistSlug,
+		artist_name: opts.meta.artistName,
+		artist_contact: opts.contact,
+		collection_slug: opts.collectionSlug,
+		collection_name: opts.meta.collectionName,
+		title: opts.meta.title,
+		description: opts.meta.description,
+		storage_path: storagePath,
+		width: opts.width,
+		height: opts.height,
+		format: ext,
+	};
+	if (opts.meta.titleEn) insertRow.title_en = opts.meta.titleEn;
+	if (opts.meta.descriptionEn) insertRow.description_en = opts.meta.descriptionEn;
+	let { data, error } = await sb.from('photos').insert(insertRow).select().single();
+	if (error && (opts.meta.titleEn || opts.meta.descriptionEn)) {
+		console.warn(
+			'[supabase] 含 title_en/description_en 的 INSERT 失败,回退到无双语字段。请到 Supabase 跑迁移 0001。原因:',
+			error.message,
+		);
+		delete insertRow.title_en;
+		delete insertRow.description_en;
+		const fallback = await sb.from('photos').insert(insertRow).select().single();
+		data = fallback.data;
+		error = fallback.error;
+	}
 
 	if (error || !data) {
 		// 元数据写失败 → 尽量回滚 Storage 上传

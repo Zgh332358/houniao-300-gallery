@@ -321,15 +321,27 @@ import MainLayout from '../layouts/MainLayout.astro';
 										type="text"
 										x-model="f.title"
 										@input="f.titleEdited = true"
-										placeholder="标题"
+										placeholder="中文标题"
 										class="w-full px-2 py-1 text-sm border border-gray-200 rounded"
+									/>
+									<input
+										type="text"
+										x-model="f.titleEn"
+										placeholder="English title (AI 自动填,可改)"
+										class="w-full px-2 py-1 text-sm border border-gray-200 rounded text-gray-600"
 									/>
 									<input
 										type="text"
 										x-model="f.description"
 										@input="f.descEdited = true"
-										placeholder="描述（可选）"
+										placeholder="中文描述(可选)"
 										class="w-full px-2 py-1 text-sm border border-gray-200 rounded"
+									/>
+									<input
+										type="text"
+										x-model="f.descriptionEn"
+										placeholder="English description (AI 自动填,可改)"
+										class="w-full px-2 py-1 text-sm border border-gray-200 rounded text-gray-600"
 									/>
 
 									<!-- ✨ Step 作品助手 -->
@@ -570,7 +582,9 @@ import MainLayout from '../layouts/MainLayout.astro';
 		file: File;
 		preview: string;
 		title: string;
+		titleEn: string;
 		description: string;
+		descriptionEn: string;
 		titleEdited: boolean;
 		descEdited: boolean;
 		size: number;
@@ -721,7 +735,9 @@ import MainLayout from '../layouts/MainLayout.astro';
 						file,
 						preview: URL.createObjectURL(file),
 						title: stripExt(file.name),
+						titleEn: '',
 						description: '',
+						descriptionEn: '',
 						titleEdited: false,
 						descEdited: false,
 						size: file.size,
@@ -959,6 +975,9 @@ import MainLayout from '../layouts/MainLayout.astro';
 				// 仅在用户尚未手动改过时，用 AI 建议填充
 				if (!f.titleEdited && r.suggestion.title) f.title = r.suggestion.title;
 				if (!f.descEdited && r.suggestion.description) f.description = r.suggestion.description;
+				// 英文字段:只要 AI 给了就直接填,不做 titleEdited 那套(英文没单独的编辑追踪)
+				if (r.suggestion.titleEn) f.titleEn = r.suggestion.titleEn;
+				if (r.suggestion.descriptionEn) f.descriptionEn = r.suggestion.descriptionEn;
 			},
 
 			async sendChat(f: FileItem) {
@@ -971,7 +990,9 @@ import MainLayout from '../layouts/MainLayout.astro';
 				// 以表单当前实际值为准，让模型在艺术家手改后的版本上调整
 				const cur: AiSuggestion = {
 					title: f.title,
+					titleEn: f.ai.suggestion?.titleEn || '',
 					description: f.description,
+					descriptionEn: f.ai.suggestion?.descriptionEn || '',
 					curatorNote: f.ai.suggestion?.curatorNote || '',
 					tags: f.ai.suggestion?.tags || {
 						theme: '',
@@ -997,10 +1018,12 @@ import MainLayout from '../layouts/MainLayout.astro';
 					f.title = r.suggestion.title;
 					f.titleEdited = true;
 				}
+				if (r.suggestion.titleEn) f.titleEn = r.suggestion.titleEn;
 				if (r.suggestion.description) {
 					f.description = r.suggestion.description;
 					f.descEdited = true;
 				}
+				if (r.suggestion.descriptionEn) f.descriptionEn = r.suggestion.descriptionEn;
 				f.chat.msgs.push({ role: 'assistant', text: r.reply });
 			},
 
@@ -1047,7 +1070,9 @@ import MainLayout from '../layouts/MainLayout.astro';
 						artistName: this.artistName.trim(),
 						collectionName: this.collectionName.trim(),
 						title: item.title.trim(),
+						titleEn: item.titleEn.trim() || undefined,
 						description: item.description.trim(),
+						descriptionEn: item.descriptionEn.trim() || undefined,
 					};
 					const contact = this.artistContact.trim();
 					try {
