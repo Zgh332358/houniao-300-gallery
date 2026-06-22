@@ -52,6 +52,7 @@ export async function getStaticPaths() {
 						<div x-show="narratableCount > 0" class="mt-6 flex flex-col items-center gap-2">
 							<button
 								@click="toggleTour()"
+								data-tour-btn
 								class="px-5 py-2.5 rounded-full font-medium transition-colors flex items-center gap-2"
 								:class="tourOn ? 'bg-violet-600 text-white hover:bg-violet-700' : 'bg-black text-white hover:bg-violet-600'"
 							>
@@ -129,7 +130,6 @@ export async function getStaticPaths() {
 			// 🎙️ 自动语音导览状态
 			tourOn: false,
 			tourIdx: -1,
-			tourAudio: null as HTMLAudioElement | null,
 
 			async init() {
 				this.slug = parseArtistSlugFromUrl();
@@ -149,6 +149,13 @@ export async function getStaticPaths() {
 				this.loading = false;
 				await this.$nextTick();
 				renderGrid(this.filtered());
+				// 用户点图触发 tour:user-took-over,关掉 tour 状态(但当前播放音频继续 —
+				// 那是用户主动选的图,不是 tour 自动播的)
+				const tourBtn = this.$root.querySelector('[data-tour-btn]') as HTMLElement | null;
+				tourBtn?.addEventListener('tour:user-took-over', () => {
+					this.tourOn = false;
+					this.tourIdx = -1;
+				});
 			},
 
 			filtered() {
@@ -187,11 +194,7 @@ export async function getStaticPaths() {
 			stopTour() {
 				this.tourOn = false;
 				this.tourIdx = -1;
-				if (this.tourAudio) {
-					this.tourAudio.pause();
-					this.tourAudio = null;
-				}
-				highlightTourCard(-1);
+				stopNarration();
 			},
 
 			playAt(idx: number) {
@@ -203,23 +206,18 @@ export async function getStaticPaths() {
 				}
 				const url = narrationUrl(p);
 				if (!url) {
-					// 这张没解说,跳到下一张
 					this.advanceTour(idx + 1);
 					return;
 				}
-				if (this.tourAudio) {
-					this.tourAudio.pause();
-					this.tourAudio = null;
-				}
 				this.tourIdx = idx;
-				highlightTourCard(idx);
-				const a = new Audio(url);
-				a.addEventListener('ended', () => this.advanceTour(idx + 1));
-				a.addEventListener('error', () => this.advanceTour(idx + 1));
-				a.play().catch((err) => {
-					console.warn('autoplay 被拦,等待用户交互', err);
+				const anchor = document.querySelectorAll('.photo-item')[idx] as HTMLElement | null;
+				playNarration(url, anchor, {
+					onEnded: () => {
+						// 只有还在 tour 模式才自动跳下一张;用户中途点别的图把 tourOn 翻成
+						// false,这里就不再 advance,免得跟用户当前在听的争音轨
+						if (this.tourOn) this.advanceTour(idx + 1);
+					},
 				});
-				this.tourAudio = a;
 			},
 
 			advanceTour(nextIdx: number) {
@@ -233,16 +231,6 @@ export async function getStaticPaths() {
 				this.playAt(idx);
 			},
 		};
-	}
-
-	/** 给当前在播作品的卡片描个边,其它取消高亮 */
-	function highlightTourCard(idx: number) {
-		const grid = document.getElementById('photo-grid');
-		if (!grid) return;
-		grid.querySelectorAll<HTMLElement>('.photo-item').forEach((el, i) => {
-			el.classList.toggle('ring-4', i === idx);
-			el.classList.toggle('ring-violet-400', i === idx);
-		});
 	}
 
 	function parseArtistSlugFromUrl(): string {
@@ -292,70 +280,101 @@ export async function getStaticPaths() {
 			img.className = 'w-full h-full object-cover rounded-sm shadow-sm hover:shadow-lg transition-shadow';
 			a.appendChild(img);
 
-			// 🎙️ 解说播放按钮:阻止冒泡,不触发 glightbox
+			// 🎙️ 把解说 URL 挂在 <a> 上,grid 级别 click handler 会直接读
 			const url = narrationUrl(p);
 			if (url) {
-				const btn = document.createElement('button');
-				btn.type = 'button';
-				btn.className =
-					'absolute bottom-2 right-2 px-2.5 py-1 rounded-full bg-black/70 hover:bg-violet-600 text-white text-xs font-medium backdrop-blur-sm transition-colors flex items-center gap-1';
-				btn.dataset.narrationUrl = url;
-				btn.innerHTML = '<span class="text-[10px]">▶</span> 听';
-				btn.title = 'AI 合成语音解说';
-				btn.addEventListener('click', (ev) => {
-					ev.preventDefault();
-					ev.stopPropagation();
-					playSingleNarration(btn, url);
-				});
-				a.appendChild(btn);
+				a.dataset.narrationUrl = url;
+				// 角标:仅作视觉提示「这张有解说」+ 当前在播时变红
+				const badge = document.createElement('div');
+				badge.className =
+					'narration-badge absolute bottom-2 right-2 px-2 py-1 rounded-full bg-black/60 text-white text-[10px] font-medium backdrop-blur-sm pointer-events-none flex items-center gap-1';
+				badge.innerHTML = '<span>🎙️</span> 听';
+				a.appendChild(badge);
 			}
 
 			grid.appendChild(a);
 		}
 		setupGallery();
+		attachGridClickToPlay(grid);
 	}
 
-	/** 单张解说播放(非导览模式),按钮自己管自己 toggle */
-	let _singleAudio: HTMLAudioElement | null = null;
-	let _singleBtn: HTMLButtonElement | null = null;
-	function playSingleNarration(btn: HTMLButtonElement, url: string) {
-		const sameBtn = _singleBtn === btn;
-		if (_singleAudio) {
-			_singleAudio.pause();
-			_singleAudio = null;
+	/* ===========================================================
+	 * 解说播放器(模块级单一状态)
+	 * 三个入口共用:
+	 *   1. 点图片 → 灯箱打开同时播解说
+	 *   2. 点页头「自动语音导览」按钮 → 顺序自动播
+	 *   3. 灯箱内切换图片(slide_changed)→ 自动跟着切解说
+	 * =========================================================== */
+
+	let _activeAudio: HTMLAudioElement | null = null;
+	let _activeAnchor: HTMLElement | null = null;
+
+	function stopNarration() {
+		if (_activeAudio) {
+			_activeAudio.pause();
+			_activeAudio = null;
 		}
-		if (_singleBtn) {
-			_singleBtn.innerHTML = '<span class="text-[10px]">▶</span> 听';
-			_singleBtn.classList.remove('bg-violet-600');
+		if (_activeAnchor) {
+			setPlayingState(_activeAnchor, false);
+			_activeAnchor = null;
 		}
-		if (sameBtn) {
-			_singleBtn = null;
-			return; // 第二次点同一个 → 停
+	}
+
+	function setPlayingState(anchor: HTMLElement, playing: boolean) {
+		anchor.classList.toggle('ring-4', playing);
+		anchor.classList.toggle('ring-violet-400', playing);
+		const badge = anchor.querySelector('.narration-badge') as HTMLElement | null;
+		if (badge) {
+			badge.classList.toggle('bg-violet-600', playing);
+			badge.classList.toggle('bg-black/60', !playing);
+			badge.innerHTML = playing ? '<span>🔊</span> 播放中' : '<span>🎙️</span> 听';
 		}
-		const a = new Audio(url);
-		a.addEventListener('ended', () => {
-			btn.innerHTML = '<span class="text-[10px]">▶</span> 听';
-			btn.classList.remove('bg-violet-600');
-			if (_singleAudio === a) {
-				_singleAudio = null;
-				_singleBtn = null;
-			}
+	}
+
+	function playNarration(
+		url: string,
+		anchor: HTMLElement | null,
+		opts: { onEnded?: () => void } = {},
+	) {
+		// 同一张再点 → 停
+		if (_activeAnchor === anchor && _activeAudio) {
+			stopNarration();
+			return;
+		}
+		stopNarration();
+		const audio = new Audio(url);
+		audio.addEventListener('ended', () => {
+			if (_activeAudio === audio) stopNarration();
+			opts.onEnded?.();
 		});
-		a.addEventListener('error', () => {
-			btn.innerHTML = '⚠️';
-			if (_singleAudio === a) {
-				_singleAudio = null;
-				_singleBtn = null;
-			}
+		audio.addEventListener('error', () => {
+			if (_activeAudio === audio) stopNarration();
 		});
-		btn.innerHTML = '<span class="text-[10px]">⏸</span> 停';
-		btn.classList.add('bg-violet-600');
-		a.play().catch(() => {
-			btn.innerHTML = '<span class="text-[10px]">▶</span> 听';
-			btn.classList.remove('bg-violet-600');
+		_activeAudio = audio;
+		_activeAnchor = anchor;
+		if (anchor) setPlayingState(anchor, true);
+		audio.play().catch((err) => {
+			console.warn('audio.play() 被拦截:', err);
+			stopNarration();
 		});
-		_singleAudio = a;
-		_singleBtn = btn;
+	}
+
+	/** 给 grid 的 <a.photo-item> 加点击监听:点图就播解说,不阻止灯箱 */
+	function attachGridClickToPlay(grid: HTMLElement) {
+		grid.addEventListener('click', (e) => {
+			const a = (e.target as HTMLElement | null)?.closest?.(
+				'a.photo-item',
+			) as HTMLAnchorElement | null;
+			if (!a) return;
+			const url = a.dataset.narrationUrl;
+			if (!url) return;
+			// 用户点了一张图 → 不论是否在 tour,都切到这张的解说;
+			// alpine 的 tour 状态会被一起改(下面 toggleTour/stopTour 都通过 stopNarration 协同)
+			const tourBtn = document.querySelector('[data-tour-btn]') as HTMLElement | null;
+			tourBtn?.dispatchEvent(new CustomEvent('tour:user-took-over'));
+			playNarration(url, a);
+			// 不 preventDefault —— GLightbox 仍然正常打开,音频在后台播
+		});
 	}
 
 	(window as any).artistPage = artistPage;
