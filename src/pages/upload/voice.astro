@@ -104,10 +104,24 @@ const VOICE_PROMPT = '如果你听到我的声音,说明你正在看我的作品
 			x-show="voiceState === 'previewing'"
 			class="border border-violet-200 rounded-lg p-6 bg-violet-50/40 space-y-3"
 		>
-			<p class="font-medium">已生成你的克隆音色试听 ——</p>
-			<audio :src="voiceSampleUrl" controls class="w-full"></audio>
-			<p class="text-xs text-gray-600">听一下像不像你?不像就重录,像就「就用它」。</p>
-			<div class="flex gap-2">
+			<template x-if="voiceSampleUrl">
+				<div class="space-y-3">
+					<p class="font-medium">已生成你的克隆音色试听 ——</p>
+					<audio :src="voiceSampleUrl" controls class="w-full"></audio>
+					<p class="text-xs text-gray-600">听一下像不像你?不像就重录,像就「就用它」。</p>
+				</div>
+			</template>
+			<template x-if="!voiceSampleUrl">
+				<div class="space-y-2">
+					<p class="font-medium">✓ 音色已克隆</p>
+					<p class="text-xs text-gray-600">
+						当前模型(stepaudio-2.5-tts)不返回试听音频 — 但 voice_id 已经
+						拿到,在「⑥ 发布」时会用你这段录音克隆出来的声音念解说词。
+						这时再听效果。不放心可以重录。
+					</p>
+				</div>
+			</template>
+			<div class="flex gap-2 pt-1">
 				<button
 					type="button"
 					@click="confirmVoice()"
@@ -354,8 +368,17 @@ const VOICE_PROMPT = '如果你听到我的声音,说明你正在看我的作品
 						return;
 					}
 					this.voiceId = cl.voiceId;
-					const sampleBlob = base64ToBlob(cl.sampleAudioB64, cl.sampleAudioMime);
-					this.voiceSampleUrl = URL.createObjectURL(sampleBlob);
+					// 旧模型(step-tts-2)给试听音频;新模型(stepaudio-2.5-tts)可能不给。
+					// 没有就跳过试听,直接让用户确认 —— 反正发布时会用克隆音色合成解说,那时再听。
+					if (cl.sampleAudioB64) {
+						const sampleBlob = base64ToBlob(
+							cl.sampleAudioB64,
+							cl.sampleAudioMime || 'audio/wav',
+						);
+						this.voiceSampleUrl = URL.createObjectURL(sampleBlob);
+					} else {
+						this.voiceSampleUrl = '';
+					}
 					this.voiceState = 'previewing';
 				},
 

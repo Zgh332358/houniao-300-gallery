@@ -29,10 +29,11 @@ export const VOICE_MODEL = 'stepaudio-2.5-tts';
 export interface CloneVoiceOk {
 	ok: true;
 	voiceId: string;
-	/** 试听音频(WAV,base64),用于 UI 立即播放给艺术家确认 */
-	sampleAudioB64: string;
-	/** 试听音频的 MIME(实测多为 audio/wav) */
-	sampleAudioMime: string;
+	/** 试听音频(WAV,base64),用于 UI 立即播放给艺术家确认。
+	 *  注:旧 step-tts-2 一定有;新 stepaudio-2.5-tts 不一定返回 ——
+	 *  这是 optional,缺失时 UI 直接给确认按钮(没试听可点)。 */
+	sampleAudioB64?: string;
+	sampleAudioMime?: string;
 	ms: number;
 }
 
@@ -154,14 +155,23 @@ export async function cloneVoice(opts: {
 		if (!res.ok) return { ok: false, error: await readErrorMessage(res) };
 		const j = await res.json();
 		const voiceId: string | undefined = j?.id;
-		const sampleB64: string | undefined = j?.sample_audio;
-		if (!voiceId) return { ok: false, error: '响应里没有 voice id' };
-		if (!sampleB64) return { ok: false, error: '响应里没有 sample_audio,音色训练失败' };
+		// 不同模型字段名不一样: step-tts-2 给 sample_audio,新模型可能给
+		// audio / preview_audio / 干脆不返回。voiceId 拿到就算复刻成功,
+		// 试听音频只是给 UI 让用户确认,缺了不阻断。
+		const sampleB64: string | undefined =
+			j?.sample_audio || j?.audio || j?.preview_audio || j?.b64_audio;
+		if (!voiceId) {
+			console.error('[cloneVoice] 响应缺 voice id, 原始 body:', j);
+			return { ok: false, error: '响应里没有 voice id' };
+		}
+		if (!sampleB64) {
+			console.warn('[cloneVoice] 此模型未返回试听音频, voice_id 仍然可用:', j);
+		}
 		return {
 			ok: true,
 			voiceId,
-			sampleAudioB64: sampleB64,
-			sampleAudioMime: 'audio/wav',
+			sampleAudioB64: sampleB64 || undefined,
+			sampleAudioMime: sampleB64 ? 'audio/wav' : undefined,
 			ms: Math.round(performance.now() - start),
 		};
 	} catch (e: any) {
