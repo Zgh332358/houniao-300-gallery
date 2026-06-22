@@ -1,0 +1,127 @@
+---
+/**
+ * 6 步上传向导的进度条 —— 各 wizard 页面共用,贴在顶部 sticky。
+ * 这是个纯 Astro 组件,不带 alpine state;current 由父页面用字面量传入,
+ * 每个步骤的 done 状态从 localStorage / hasAiKey 实时读。
+ */
+
+import { STEP_ORDER, STEP_LABEL, stepHref, type StepName } from '../lib/wizard';
+
+interface Props {
+	current: StepName;
+}
+
+const { current } = Astro.props;
+const base = import.meta.env.BASE_URL;
+
+// 给客户端用的数据,挂 data attribute 上,init 时一次性读
+const stepsForClient = STEP_ORDER.map((name, idx) => ({
+	name,
+	n: idx + 1,
+	label: STEP_LABEL[name],
+	href: stepHref(base, name),
+}));
+---
+
+<div
+	id="upload-stepper"
+	class="sticky top-16 z-40 bg-white/95 backdrop-blur border-b border-gray-200"
+	data-current={current}
+	data-steps={JSON.stringify(stepsForClient)}
+>
+	<div class="container-custom max-w-4xl mx-auto px-4 sm:px-6 py-3 overflow-x-auto">
+		<div class="flex items-center gap-1 sm:gap-2 min-w-max">
+			{
+				stepsForClient.map((s, idx) => (
+					<>
+						<a
+							href={s.href}
+							class="flex items-center gap-1.5 sm:gap-2 group"
+							data-step={s.name}
+						>
+							<div
+								class={`step-circle w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold border-2 transition-colors flex-shrink-0 ${
+									s.name === current
+										? 'bg-white border-violet-600 text-violet-600 ring-2 ring-violet-200'
+										: 'bg-white border-gray-300 text-gray-400'
+								}`}
+							>
+								<span class="step-num">{s.n}</span>
+								<span class="step-tick hidden">✓</span>
+							</div>
+							<span
+								class={`step-label text-xs sm:text-sm whitespace-nowrap ${
+									s.name === current
+										? 'text-gray-800 font-medium'
+										: 'text-gray-400 group-hover:text-gray-600'
+								}`}
+							>
+								{s.label}
+							</span>
+						</a>
+						{idx < stepsForClient.length - 1 && (
+							<div class="step-line h-px w-4 sm:w-8 flex-shrink-0 bg-gray-200" />
+						)}
+					</>
+				))
+			}
+		</div>
+	</div>
+</div>
+
+<script>
+	import { isStepReady, STEP_ORDER, type StepName } from '../lib/wizard';
+
+	const root = document.getElementById('upload-stepper');
+	if (root) {
+		const current = root.dataset.current as StepName;
+		const currentIdx = STEP_ORDER.indexOf(current);
+
+		// 异步把每步的 done/active 状态算好,刷新 UI
+		(async () => {
+			for (let i = 0; i < STEP_ORDER.length; i++) {
+				const s = STEP_ORDER[i];
+				const linkEl = root.querySelector(`[data-step="${s}"]`);
+				if (!linkEl) continue;
+				const circle = linkEl.querySelector('.step-circle') as HTMLElement | null;
+				const num = linkEl.querySelector('.step-num') as HTMLElement | null;
+				const tick = linkEl.querySelector('.step-tick') as HTMLElement | null;
+				const label = linkEl.querySelector('.step-label') as HTMLElement | null;
+				if (!circle || !num || !tick || !label) continue;
+
+				// done 的定义:NEXT 步是 ready 的(即本步已完成);最后一步特殊处理
+				let done = false;
+				if (i < STEP_ORDER.length - 1) {
+					done = await isStepReady(STEP_ORDER[i + 1]);
+				} else {
+					done = await isStepReady(s);
+				}
+
+				if (done) {
+					circle.classList.remove(
+						'bg-white',
+						'border-gray-300',
+						'text-gray-400',
+						'border-violet-600',
+						'text-violet-600',
+						'ring-2',
+						'ring-violet-200',
+					);
+					circle.classList.add('bg-violet-600', 'border-violet-600', 'text-white');
+					num.classList.add('hidden');
+					tick.classList.remove('hidden');
+					label.classList.remove('text-gray-400');
+					label.classList.add('text-gray-800', 'font-medium');
+					// 给前一根连线染色
+					const link = linkEl.nextElementSibling as HTMLElement | null;
+					if (link?.classList.contains('step-line')) {
+						link.classList.remove('bg-gray-200');
+						link.classList.add('bg-violet-600');
+					}
+				}
+				// current 已经在服务端渲染时打了样式,跳过
+				if (s === current) continue;
+			}
+		})();
+	}
+</script>
