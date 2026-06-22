@@ -24,7 +24,27 @@ export interface PhotoMeta {
 	artistName: string;
 	collectionName: string;
 	title: string;
+	/** 英文标题(里程碑 E 起由 AI 双语生成) */
+	titleEn?: string;
 	description: string;
+	/** 英文描述(里程碑 E 起由 AI 双语生成) */
+	descriptionEn?: string;
+}
+
+/** 五维标签(里程碑 E 起由 AI 一次性生成) */
+export interface PhotoTags {
+	theme?: string;
+	style?: string;
+	medium?: string;
+	palette?: string;
+	mood?: string;
+}
+
+/** 内容审核结果(里程碑 E 起由 AI 同步返回,门控发布) */
+export interface PhotoModeration {
+	safe?: boolean;
+	reason?: string;
+	categories?: string[];
 }
 
 export interface PhotoEntry {
@@ -37,6 +57,16 @@ export interface PhotoEntry {
 	collectionSlug: string;
 	storagePath: string;
 	meta: PhotoMeta;
+	/** 五维标签(里程碑 E) */
+	tags?: PhotoTags;
+	/** 策展短评(里程碑 E) */
+	curatorNote?: string;
+	/** AI 解说词原文(里程碑 D) */
+	narrationText?: string;
+	/** 解说 mp3 在 audio bucket 的路径(里程碑 D) */
+	narrationPath?: string;
+	/** 内容审核结果(里程碑 E) */
+	moderation?: PhotoModeration;
 	/** mock-only：picsum seed 占位图 */
 	mockSeed?: string;
 	/** mock-only：用户上传的真实文件 base64（小文件） */
