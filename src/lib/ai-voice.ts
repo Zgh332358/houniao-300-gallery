@@ -208,6 +208,11 @@ export async function synthesizeSpeech(opts: SynthOptions): Promise<ApiResult<Sy
 
 	const start = performance.now();
 	try {
+		// 不同 TTS 模型对参数支持不一样:
+		//   step-tts-2 接受 voice_label.style/emotion,response_format 可省
+		//   stepaudio-2.5-tts(新)不接受 voice_label,带上就 400
+		// 默认只发最小必需的 4 个字段;只有调用方明确传 speed/emotion/style 时才加,
+		// 失败时把 body 打到 console 方便排查
 		const body: Record<string, unknown> = {
 			model: VOICE_MODEL,
 			voice: opts.voiceId,
@@ -229,7 +234,11 @@ export async function synthesizeSpeech(opts: SynthOptions): Promise<ApiResult<Sy
 			},
 			body: JSON.stringify(body),
 		});
-		if (!res.ok) return { ok: false, error: await readErrorMessage(res) };
+		if (!res.ok) {
+			const errMsg = await readErrorMessage(res);
+			console.error('[synthesizeSpeech] 失败 body:', body, '错误:', errMsg);
+			return { ok: false, error: errMsg };
+		}
 		const audio = await res.blob();
 		return {
 			ok: true,

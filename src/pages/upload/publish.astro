@@ -265,7 +265,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					const sr = await synthesizeSpeech({
 						voiceId: this.voiceId,
 						text: nr.text,
-						style: 'narration',
+						// 不传 style/emotion:stepaudio-2.5-tts 不接受 voice_label,会 400
 					});
 					if (!sr.ok) {
 						p.publishError = `合成失败: ${sr.error} (图片仍发布成功)`;
