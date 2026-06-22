@@ -142,30 +142,61 @@ import MainLayout from '../layouts/MainLayout.astro';
 						</div>
 					</div>
 					<p class="text-xs text-gray-500 mb-4">
-						上传一段 <strong>5~10 秒</strong>的纯人声(mp3 / wav / m4a),
-						AI 用它克隆你的音色,发布作品时<strong>自动生成你声音的语音解说</strong>。
-						不上传也能发作品,但访客就听不到「艺术家亲口讲这幅画」了。
+						对着麦克风<strong>朗读下面这句话</strong>,AI 会用这段录音克隆你的音色 ——
+						之后你发布作品时,会自动生成「你的声音」念出来的语音解说。
+						没录也能发作品,但访客就听不到「艺术家亲口讲这幅画」了。
 					</p>
 
-					<!-- A: 选样本 -->
-					<div x-show="voiceState === 'idle' || voiceState === 'recorded' || voiceState === 'error'" class="space-y-3">
-						<label class="block">
-							<input
-								type="file"
-								accept="audio/mpeg,audio/wav,audio/mp4,audio/x-m4a,audio/*"
-								@change="onVoiceFilePicked($event)"
-								class="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:bg-violet-50 file:text-violet-700 file:cursor-pointer hover:file:bg-violet-100"
-							/>
-						</label>
+					<!-- 提示词 -->
+					<div
+						class="mb-4 p-4 bg-gray-50 border-l-4 border-violet-400 rounded-r"
+						x-show="voiceState !== 'done'"
+					>
+						<p class="text-xs text-gray-500 mb-1">请朗读 ↓</p>
+						<p class="text-base md:text-lg leading-relaxed text-gray-800">
+							「如果你听到我的声音,说明你正在看我的作品。慢慢看,慢慢听。」
+						</p>
+						<p class="text-xs text-gray-400 mt-2">约 6~8 秒 · 自然语速 · 不要刻意</p>
+					</div>
 
-						<div x-show="voiceFileUrl" class="space-y-2">
+					<!-- A: 录音按钮 + 已录音预览 -->
+					<div x-show="voiceState === 'idle' || voiceState === 'recorded' || voiceState === 'error'" class="space-y-3">
+						<div class="flex items-center gap-3">
+							<button
+								type="button"
+								x-show="!recording"
+								@click="startRecording()"
+								:disabled="!step1Done || !aiOn"
+								class="px-5 py-3 rounded-full bg-violet-600 text-white font-medium hover:bg-violet-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+							>
+								<span class="w-2.5 h-2.5 bg-white rounded-full"></span>
+								<span x-text="voiceFile ? '重新录' : '开始录音'"></span>
+							</button>
+							<button
+								type="button"
+								x-show="recording"
+								@click="stopRecording()"
+								class="px-5 py-3 rounded-full bg-red-600 text-white font-medium hover:bg-red-700 flex items-center gap-2"
+							>
+								<span class="w-2.5 h-2.5 bg-white rounded-sm animate-pulse"></span>
+								停止 (<span x-text="recordSecs.toFixed(1)"></span>s)
+							</button>
+							<span x-show="recording" class="text-xs text-gray-500">
+								12 秒后自动停;听到后默念「慢慢看,慢慢听」时再停最自然
+							</span>
+						</div>
+
+						<div x-show="voiceFileUrl && !recording" class="space-y-2">
 							<audio :src="voiceFileUrl" controls class="w-full"></audio>
 							<p class="text-xs text-gray-500">
-								<span x-text="voiceFileName"></span> · <span x-text="voiceFileDuration"></span>
+								录到 <span x-text="voiceFileDuration"></span> · 听一下满意吗?不满意点上面「重新录」
 							</p>
 						</div>
 
-						<label class="flex items-start gap-2 text-sm text-gray-700 select-none cursor-pointer">
+						<label
+							x-show="voiceFile && !recording"
+							class="flex items-start gap-2 text-sm text-gray-700 select-none cursor-pointer"
+						>
 							<input type="checkbox" x-model="voiceConsent" class="mt-1" />
 							<span>
 								我授权该平台使用这段录音克隆<strong>我本人</strong>的声音,仅用于本平台为我的作品生成 AI 解说语音。
@@ -174,6 +205,7 @@ import MainLayout from '../layouts/MainLayout.astro';
 
 						<button
 							type="button"
+							x-show="voiceFile && !recording"
 							:disabled="!canRegisterVoice"
 							@click="registerVoice()"
 							class="px-4 py-2 bg-violet-600 text-white rounded text-sm font-medium hover:bg-violet-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
@@ -184,6 +216,11 @@ import MainLayout from '../layouts/MainLayout.astro';
 						<template x-if="voiceState === 'idle' && !aiOn">
 							<p class="text-xs text-amber-700">
 								需要先在上方「AI 作品助手」填好 Step API Key 才能调用音色复刻。
+							</p>
+						</template>
+						<template x-if="voiceState === 'idle' && aiOn && !step1Done">
+							<p class="text-xs text-amber-700">
+								先在「你是谁」填好显示名,再录音 — 我们要把声音绑到你的页面。
 							</p>
 						</template>
 					</div>
@@ -209,7 +246,7 @@ import MainLayout from '../layouts/MainLayout.astro';
 								type="button"
 								@click="resetVoice()"
 								class="px-4 py-2 border border-gray-300 rounded text-sm hover:bg-gray-50"
-							>重录 / 重传</button>
+							>重录</button>
 						</div>
 					</div>
 
@@ -580,6 +617,7 @@ import MainLayout from '../layouts/MainLayout.astro';
 		synthesizeSpeech,
 		base64ToBlob,
 	} from '../lib/ai-voice';
+	import { blobToWav, pickRecorderMime } from '../lib/wav';
 	import {
 		upsertArtist,
 		setArtistVoice,
@@ -654,13 +692,20 @@ import MainLayout from '../layouts/MainLayout.astro';
 			voiceState: 'idle' as 'idle' | 'recorded' | 'registering' | 'previewing' | 'done' | 'error',
 			voiceFile: null as File | null,
 			voiceFileUrl: '' as string,
-			voiceFileName: '' as string,
 			voiceFileDuration: '' as string,
 			voiceConsent: false,
 			voiceId: '' as string,
 			voiceSamplePath: '' as string,
 			voiceSampleUrl: '' as string,
 			voiceError: '' as string,
+			// 🎤 就地录音
+			recording: false,
+			recordSecs: 0 as number,
+			_mediaRecorder: null as MediaRecorder | null,
+			_mediaStream: null as MediaStream | null,
+			_recordChunks: [] as Blob[],
+			_recordTimer: 0 as number,
+			_recordStartedAt: 0 as number,
 
 			init() {
 				try {
@@ -830,30 +875,136 @@ import MainLayout from '../layouts/MainLayout.astro';
 				);
 			},
 
-			onVoiceFilePicked(ev: Event) {
+			onVoiceFilePicked(_ev: Event) {
+				/* 旧的文件上传入口已删除,这里保留空实现避免老缓存的页面报错 */
+			},
+
+			async startRecording() {
 				this.voiceError = '';
-				const input = ev.target as HTMLInputElement;
-				const f = input.files?.[0];
-				if (!f) return;
-				if (!f.type.startsWith('audio/')) {
-					this.voiceError = '需要音频文件 (mp3 / wav / m4a)';
+				if (!this.aiOn) {
+					this.voiceError = '请先在上方「AI 助手」填入 Step API Key';
 					return;
 				}
-				if (this.voiceFileUrl) URL.revokeObjectURL(this.voiceFileUrl);
-				this.voiceFile = f;
-				this.voiceFileUrl = URL.createObjectURL(f);
-				this.voiceFileName = f.name;
-				this.voiceFileDuration = '...';
-				this.voiceState = 'recorded';
-				// 试探读时长(用一个临时 audio 元素)
-				const probe = new Audio(this.voiceFileUrl);
-				probe.addEventListener('loadedmetadata', () => {
-					const sec = probe.duration;
-					this.voiceFileDuration = isFinite(sec) ? `${sec.toFixed(1)} 秒` : '时长未知';
-					if (isFinite(sec) && (sec < 3 || sec > 15)) {
-						this.voiceError = `建议 5~10 秒;当前 ${sec.toFixed(1)} 秒,可能复刻效果不理想`;
-					}
+				if (!this.step1Done) {
+					this.voiceError = '请先在「你是谁」填好显示名';
+					return;
+				}
+				if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+					this.voiceError = '当前浏览器不支持录音,请用 Chrome / Edge / Safari';
+					return;
+				}
+				let stream: MediaStream;
+				try {
+					stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+				} catch (err: any) {
+					this.voiceError =
+						err?.name === 'NotAllowedError'
+							? '麦克风权限被拒绝。请在浏览器地址栏左侧重新允许。'
+							: `麦克风启动失败: ${err?.message || String(err)}`;
+					return;
+				}
+				const mime = pickRecorderMime();
+				let mr: MediaRecorder;
+				try {
+					mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+				} catch (err: any) {
+					this.voiceError = `MediaRecorder 启动失败: ${err?.message || String(err)}`;
+					stream.getTracks().forEach((t) => t.stop());
+					return;
+				}
+
+				// 清掉上一次录音的预览
+				if (this.voiceFileUrl) {
+					URL.revokeObjectURL(this.voiceFileUrl);
+					this.voiceFileUrl = '';
+				}
+				this.voiceFile = null;
+				this._recordChunks = [];
+
+				mr.addEventListener('dataavailable', (e: BlobEvent) => {
+					if (e.data && e.data.size > 0) this._recordChunks.push(e.data);
 				});
+				mr.addEventListener('stop', () => {
+					this._finalizeRecording();
+				});
+
+				this._mediaRecorder = mr;
+				this._mediaStream = stream;
+				this._recordStartedAt = performance.now();
+				this.recordSecs = 0;
+				mr.start();
+				this.recording = true;
+
+				// 倒计时 + 12s 自动停
+				const tick = () => {
+					if (!this.recording) return;
+					this.recordSecs = (performance.now() - this._recordStartedAt) / 1000;
+					if (this.recordSecs >= 12) {
+						this.stopRecording();
+						return;
+					}
+					this._recordTimer = window.setTimeout(tick, 100);
+				};
+				tick();
+			},
+
+			stopRecording() {
+				if (!this.recording) return;
+				this.recording = false;
+				if (this._recordTimer) {
+					clearTimeout(this._recordTimer);
+					this._recordTimer = 0;
+				}
+				try {
+					this._mediaRecorder?.stop();
+				} catch {
+					/* ignore */
+				}
+				try {
+					this._mediaStream?.getTracks().forEach((t) => t.stop());
+				} catch {
+					/* ignore */
+				}
+				this._mediaStream = null;
+			},
+
+			async _finalizeRecording() {
+				const recorder = this._mediaRecorder;
+				this._mediaRecorder = null;
+				if (!this._recordChunks.length) {
+					this.voiceError = '没录到声音 — 检查麦克风或重试';
+					return;
+				}
+				const recordedMime = recorder?.mimeType || this._recordChunks[0]?.type || 'audio/webm';
+				const rawBlob = new Blob(this._recordChunks, { type: recordedMime });
+				this._recordChunks = [];
+
+				// 转 WAV(StepFun /v1/files 接受 wav)
+				let wavBlob: Blob;
+				try {
+					wavBlob = await blobToWav(rawBlob);
+				} catch (err: any) {
+					this.voiceError = `录音转 WAV 失败: ${err?.message || String(err)}`;
+					return;
+				}
+
+				// 给浏览器 audio 标签预览用 - 直接用原始 blob,WAV 文件留给 StepFun
+				if (this.voiceFileUrl) URL.revokeObjectURL(this.voiceFileUrl);
+				this.voiceFileUrl = URL.createObjectURL(rawBlob);
+
+				// 把 WAV 包成 File,registerVoice 上传时要带文件名
+				const filename = `${this.artistSlug || 'voice'}-${Date.now()}.wav`;
+				this.voiceFile = new File([wavBlob], filename, { type: 'audio/wav' });
+
+				// 试探时长 + 给 UI
+				const duration = (performance.now() - this._recordStartedAt) / 1000;
+				this.voiceFileDuration = `${duration.toFixed(1)} 秒`;
+				if (duration < 3) {
+					this.voiceError = `录音 ${duration.toFixed(1)} 秒太短了 — 至少录满整句话(约 5~8 秒)`;
+				} else {
+					this.voiceError = '';
+				}
+				this.voiceState = 'recorded';
 			},
 
 			async registerVoice() {
@@ -930,15 +1081,16 @@ import MainLayout from '../layouts/MainLayout.astro';
 			resetVoice() {
 				if (this.voiceFileUrl) URL.revokeObjectURL(this.voiceFileUrl);
 				if (this.voiceSampleUrl) URL.revokeObjectURL(this.voiceSampleUrl);
+				if (this.recording) this.stopRecording();
 				this.voiceFile = null;
 				this.voiceFileUrl = '';
-				this.voiceFileName = '';
 				this.voiceFileDuration = '';
 				this.voiceConsent = false;
 				this.voiceId = '';
 				this.voiceSamplePath = '';
 				this.voiceSampleUrl = '';
 				this.voiceError = '';
+				this.recordSecs = 0;
 				this.voiceState = 'idle';
 			},
 
