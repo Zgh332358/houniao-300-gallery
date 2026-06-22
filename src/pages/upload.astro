@@ -728,11 +728,11 @@ import MainLayout from '../layouts/MainLayout.astro';
 					if (this.aiOn && item.moderation && item.moderation.safe === false) continue;
 					const meta: PhotoMeta = {
 						artistName: this.artistName.trim(),
-						artistContact: this.artistContact.trim(),
 						collectionName: this.collectionName.trim(),
 						title: item.title.trim(),
 						description: item.description.trim(),
 					};
+					const contact = this.artistContact.trim();
 					try {
 						item.status = 'uploading';
 						item.progress = 0;
@@ -748,6 +748,7 @@ import MainLayout from '../layouts/MainLayout.astro';
 								artistSlug: this.artistSlug,
 								collectionSlug: this.collectionSlug,
 								meta,
+								contact,
 								width,
 								height,
 								onProgress: (p) => {

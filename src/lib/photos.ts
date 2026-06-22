@@ -22,7 +22,6 @@ export type Mode = 'live' | 'mock';
 
 export interface PhotoMeta {
 	artistName: string;
-	artistContact: string;
 	collectionName: string;
 	title: string;
 	description: string;
@@ -47,7 +46,6 @@ export interface PhotoEntry {
 export interface ArtistSummary {
 	slug: string;
 	name: string;
-	contact: string;
 	coverPhoto: PhotoEntry;
 	photoCount: number;
 }
@@ -123,7 +121,6 @@ function mockPhoto(opts: {
 	dim: { w: number; h: number };
 	artistSlug: string;
 	artistName: string;
-	contact: string;
 	collSlug: string;
 	collName: string;
 	title: string;
@@ -141,7 +138,6 @@ function mockPhoto(opts: {
 		storagePath: '',
 		meta: {
 			artistName: opts.artistName,
-			artistContact: opts.contact,
 			collectionName: opts.collName,
 			title: opts.title,
 			description: opts.desc ?? '',
@@ -158,33 +154,33 @@ const D_TALL = { w: 900, h: 1350 };
 
 const MOCK_SEED_PHOTOS: PhotoEntry[] = [
 	// 候鸟驻地·艺术家 01 / artist-01
-	mockPhoto({ seed: 'a01-1', dim: D_LANDSCAPE, artistSlug: 'artist-01', artistName: '艺术家 01', contact: 'hello@example.com', collSlug: 'night-street', collName: '夜色街拍', title: '雨夜霓虹', desc: '示例占位 · 候鸟驻地参展作品', daysAgo: 1 }),
-	mockPhoto({ seed: 'a01-2', dim: D_PORTRAIT, artistSlug: 'artist-01', artistName: '艺术家 01', contact: 'hello@example.com', collSlug: 'night-street', collName: '夜色街拍', title: '便利店窗外', daysAgo: 2 }),
-	mockPhoto({ seed: 'a01-3', dim: D_WIDE, artistSlug: 'artist-01', artistName: '艺术家 01', contact: 'hello@example.com', collSlug: 'night-street', collName: '夜色街拍', title: '弄堂深处', daysAgo: 3 }),
-	mockPhoto({ seed: 'a01-4', dim: D_SQUARE, artistSlug: 'artist-01', artistName: '艺术家 01', contact: 'hello@example.com', collSlug: 'night-street', collName: '夜色街拍', title: '地铁口', daysAgo: 4 }),
-	mockPhoto({ seed: 'a01-5', dim: D_LANDSCAPE, artistSlug: 'artist-01', artistName: '艺术家 01', contact: 'hello@example.com', collSlug: 'night-street', collName: '夜色街拍', title: '出租车', daysAgo: 5 }),
-	mockPhoto({ seed: 'a01-6', dim: D_LANDSCAPE, artistSlug: 'artist-01', artistName: '艺术家 01', contact: 'hello@example.com', collSlug: 'mountain', collName: '山景', title: '高原', desc: '示例占位', daysAgo: 12 }),
-	mockPhoto({ seed: 'a01-7', dim: D_WIDE, artistSlug: 'artist-01', artistName: '艺术家 01', contact: 'hello@example.com', collSlug: 'mountain', collName: '山景', title: '云海日出', daysAgo: 14 }),
-	mockPhoto({ seed: 'a01-8', dim: D_PORTRAIT, artistSlug: 'artist-01', artistName: '艺术家 01', contact: 'hello@example.com', collSlug: 'mountain', collName: '山景', title: '雪线之上', daysAgo: 16 }),
+	mockPhoto({ seed: 'a01-1', dim: D_LANDSCAPE, artistSlug: 'artist-01', artistName: '艺术家 01', collSlug: 'night-street', collName: '夜色街拍', title: '雨夜霓虹', desc: '示例占位 · 候鸟驻地参展作品', daysAgo: 1 }),
+	mockPhoto({ seed: 'a01-2', dim: D_PORTRAIT, artistSlug: 'artist-01', artistName: '艺术家 01', collSlug: 'night-street', collName: '夜色街拍', title: '便利店窗外', daysAgo: 2 }),
+	mockPhoto({ seed: 'a01-3', dim: D_WIDE, artistSlug: 'artist-01', artistName: '艺术家 01', collSlug: 'night-street', collName: '夜色街拍', title: '弄堂深处', daysAgo: 3 }),
+	mockPhoto({ seed: 'a01-4', dim: D_SQUARE, artistSlug: 'artist-01', artistName: '艺术家 01', collSlug: 'night-street', collName: '夜色街拍', title: '地铁口', daysAgo: 4 }),
+	mockPhoto({ seed: 'a01-5', dim: D_LANDSCAPE, artistSlug: 'artist-01', artistName: '艺术家 01', collSlug: 'night-street', collName: '夜色街拍', title: '出租车', daysAgo: 5 }),
+	mockPhoto({ seed: 'a01-6', dim: D_LANDSCAPE, artistSlug: 'artist-01', artistName: '艺术家 01', collSlug: 'mountain', collName: '山景', title: '高原', desc: '示例占位', daysAgo: 12 }),
+	mockPhoto({ seed: 'a01-7', dim: D_WIDE, artistSlug: 'artist-01', artistName: '艺术家 01', collSlug: 'mountain', collName: '山景', title: '云海日出', daysAgo: 14 }),
+	mockPhoto({ seed: 'a01-8', dim: D_PORTRAIT, artistSlug: 'artist-01', artistName: '艺术家 01', collSlug: 'mountain', collName: '山景', title: '雪线之上', daysAgo: 16 }),
 
 	// 候鸟驻地·艺术家 02 / artist-02
-	mockPhoto({ seed: 'a02-1', dim: D_PORTRAIT, artistSlug: 'artist-02', artistName: '艺术家 02', contact: 'hello@example.com', collSlug: 'portrait', collName: '人像', title: '阳台午后', daysAgo: 6 }),
-	mockPhoto({ seed: 'a02-2', dim: D_TALL, artistSlug: 'artist-02', artistName: '艺术家 02', contact: 'hello@example.com', collSlug: 'portrait', collName: '人像', title: '镜中', daysAgo: 7 }),
-	mockPhoto({ seed: 'a02-3', dim: D_PORTRAIT, artistSlug: 'artist-02', artistName: '艺术家 02', contact: 'hello@example.com', collSlug: 'portrait', collName: '人像', title: '咖啡馆', desc: '示例占位 · 35mm', daysAgo: 8 }),
-	mockPhoto({ seed: 'a02-4', dim: D_SQUARE, artistSlug: 'artist-02', artistName: '艺术家 02', contact: 'hello@example.com', collSlug: 'portrait', collName: '人像', title: '初见', daysAgo: 9 }),
-	mockPhoto({ seed: 'a02-5', dim: D_LANDSCAPE, artistSlug: 'artist-02', artistName: '艺术家 02', contact: 'hello@example.com', collSlug: 'travel', collName: '旅行', title: '清水寺', daysAgo: 18 }),
-	mockPhoto({ seed: 'a02-6', dim: D_WIDE, artistSlug: 'artist-02', artistName: '艺术家 02', contact: 'hello@example.com', collSlug: 'travel', collName: '旅行', title: '电车', daysAgo: 20 }),
-	mockPhoto({ seed: 'a02-7', dim: D_LANDSCAPE, artistSlug: 'artist-02', artistName: '艺术家 02', contact: 'hello@example.com', collSlug: 'travel', collName: '旅行', title: '黑沙滩', daysAgo: 22 }),
-	mockPhoto({ seed: 'a02-8', dim: D_PORTRAIT, artistSlug: 'artist-02', artistName: '艺术家 02', contact: 'hello@example.com', collSlug: 'travel', collName: '旅行', title: '集市', daysAgo: 24 }),
+	mockPhoto({ seed: 'a02-1', dim: D_PORTRAIT, artistSlug: 'artist-02', artistName: '艺术家 02', collSlug: 'portrait', collName: '人像', title: '阳台午后', daysAgo: 6 }),
+	mockPhoto({ seed: 'a02-2', dim: D_TALL, artistSlug: 'artist-02', artistName: '艺术家 02', collSlug: 'portrait', collName: '人像', title: '镜中', daysAgo: 7 }),
+	mockPhoto({ seed: 'a02-3', dim: D_PORTRAIT, artistSlug: 'artist-02', artistName: '艺术家 02', collSlug: 'portrait', collName: '人像', title: '咖啡馆', desc: '示例占位 · 35mm', daysAgo: 8 }),
+	mockPhoto({ seed: 'a02-4', dim: D_SQUARE, artistSlug: 'artist-02', artistName: '艺术家 02', collSlug: 'portrait', collName: '人像', title: '初见', daysAgo: 9 }),
+	mockPhoto({ seed: 'a02-5', dim: D_LANDSCAPE, artistSlug: 'artist-02', artistName: '艺术家 02', collSlug: 'travel', collName: '旅行', title: '清水寺', daysAgo: 18 }),
+	mockPhoto({ seed: 'a02-6', dim: D_WIDE, artistSlug: 'artist-02', artistName: '艺术家 02', collSlug: 'travel', collName: '旅行', title: '电车', daysAgo: 20 }),
+	mockPhoto({ seed: 'a02-7', dim: D_LANDSCAPE, artistSlug: 'artist-02', artistName: '艺术家 02', collSlug: 'travel', collName: '旅行', title: '黑沙滩', daysAgo: 22 }),
+	mockPhoto({ seed: 'a02-8', dim: D_PORTRAIT, artistSlug: 'artist-02', artistName: '艺术家 02', collSlug: 'travel', collName: '旅行', title: '集市', daysAgo: 24 }),
 
 	// 候鸟驻地·艺术家 03 / artist-03
-	mockPhoto({ seed: 'a03-1', dim: D_SQUARE, artistSlug: 'artist-03', artistName: '艺术家 03', contact: 'hello@example.com', collSlug: 'abstract', collName: '抽象', title: '光的研究 #03', daysAgo: 10 }),
-	mockPhoto({ seed: 'a03-2', dim: D_LANDSCAPE, artistSlug: 'artist-03', artistName: '艺术家 03', contact: 'hello@example.com', collSlug: 'abstract', collName: '抽象', title: '光的研究 #07', daysAgo: 11 }),
-	mockPhoto({ seed: 'a03-3', dim: D_PORTRAIT, artistSlug: 'artist-03', artistName: '艺术家 03', contact: 'hello@example.com', collSlug: 'abstract', collName: '抽象', title: '反射 12', daysAgo: 13 }),
-	mockPhoto({ seed: 'a03-4', dim: D_WIDE, artistSlug: 'artist-03', artistName: '艺术家 03', contact: 'hello@example.com', collSlug: 'abstract', collName: '抽象', title: '色场', daysAgo: 15 }),
-	mockPhoto({ seed: 'a03-5', dim: D_LANDSCAPE, artistSlug: 'artist-03', artistName: '艺术家 03', contact: 'hello@example.com', collSlug: 'urban', collName: '都市', title: '地铁站台', daysAgo: 17 }),
-	mockPhoto({ seed: 'a03-6', dim: D_PORTRAIT, artistSlug: 'artist-03', artistName: '艺术家 03', contact: 'hello@example.com', collSlug: 'urban', collName: '都市', title: '桥', daysAgo: 19 }),
-	mockPhoto({ seed: 'a03-7', dim: D_TALL, artistSlug: 'artist-03', artistName: '艺术家 03', contact: 'hello@example.com', collSlug: 'urban', collName: '都市', title: '天际线', daysAgo: 21 }),
+	mockPhoto({ seed: 'a03-1', dim: D_SQUARE, artistSlug: 'artist-03', artistName: '艺术家 03', collSlug: 'abstract', collName: '抽象', title: '光的研究 #03', daysAgo: 10 }),
+	mockPhoto({ seed: 'a03-2', dim: D_LANDSCAPE, artistSlug: 'artist-03', artistName: '艺术家 03', collSlug: 'abstract', collName: '抽象', title: '光的研究 #07', daysAgo: 11 }),
+	mockPhoto({ seed: 'a03-3', dim: D_PORTRAIT, artistSlug: 'artist-03', artistName: '艺术家 03', collSlug: 'abstract', collName: '抽象', title: '反射 12', daysAgo: 13 }),
+	mockPhoto({ seed: 'a03-4', dim: D_WIDE, artistSlug: 'artist-03', artistName: '艺术家 03', collSlug: 'abstract', collName: '抽象', title: '色场', daysAgo: 15 }),
+	mockPhoto({ seed: 'a03-5', dim: D_LANDSCAPE, artistSlug: 'artist-03', artistName: '艺术家 03', collSlug: 'urban', collName: '都市', title: '地铁站台', daysAgo: 17 }),
+	mockPhoto({ seed: 'a03-6', dim: D_PORTRAIT, artistSlug: 'artist-03', artistName: '艺术家 03', collSlug: 'urban', collName: '都市', title: '桥', daysAgo: 19 }),
+	mockPhoto({ seed: 'a03-7', dim: D_TALL, artistSlug: 'artist-03', artistName: '艺术家 03', collSlug: 'urban', collName: '都市', title: '天际线', daysAgo: 21 }),
 ];
 
 const MOCK_UPLOAD_KEY = 'pf:mock-uploads:v1';
@@ -232,7 +228,6 @@ interface PhotoRow {
 	id: string;
 	artist_slug: string;
 	artist_name: string;
-	artist_contact: string;
 	collection_slug: string;
 	collection_name: string;
 	title: string | null;
@@ -256,7 +251,6 @@ function rowToEntry(row: PhotoRow): PhotoEntry {
 		storagePath: row.storage_path,
 		meta: {
 			artistName: row.artist_name,
-			artistContact: row.artist_contact,
 			collectionName: row.collection_name,
 			title: row.title || '',
 			description: row.description || '',
@@ -274,9 +268,12 @@ export async function listAll(): Promise<PhotoEntry[]> {
 	}
 
 	const sb = getClient();
+	// 显式列举公开列,避免 SELECT * 把 artist_contact 这类敏感字段带回前端。
 	const { data, error } = await sb
 		.from('photos')
-		.select('*')
+		.select(
+			'id,artist_slug,artist_name,collection_slug,collection_name,title,description,storage_path,width,height,format,created_at',
+		)
 		.order('created_at', { ascending: false });
 
 	if (error) {
@@ -303,6 +300,8 @@ export async function uploadPhoto(
 		artistSlug: string;
 		collectionSlug: string;
 		meta: PhotoMeta;
+		/** 艺术家自报联系方式。写入数据库供运营私下回联,不进任何匿名读取路径。 */
+		contact: string;
 		width: number;
 		height: number;
 		onProgress?: (pct: number) => void;
@@ -339,7 +338,7 @@ export async function uploadPhoto(
 		.insert({
 			artist_slug: opts.artistSlug,
 			artist_name: opts.meta.artistName,
-			artist_contact: opts.meta.artistContact,
+			artist_contact: opts.contact,
 			collection_slug: opts.collectionSlug,
 			collection_name: opts.meta.collectionName,
 			title: opts.meta.title,
@@ -408,7 +407,6 @@ export function groupByArtist(photos: PhotoEntry[]): ArtistSummary[] {
 			map.set(p.artistSlug, {
 				slug: p.artistSlug,
 				name: p.meta.artistName || p.artistSlug,
-				contact: p.meta.artistContact,
 				coverPhoto: p,
 				photoCount: 1,
 			});
