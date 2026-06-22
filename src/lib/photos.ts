@@ -267,10 +267,13 @@ interface PhotoRow {
 	height: number;
 	format: string;
 	created_at: string;
+	/** 迁移 0001 后新增,旧库可能缺 */
+	narration_text?: string | null;
+	narration_path?: string | null;
 }
 
 function rowToEntry(row: PhotoRow): PhotoEntry {
-	return {
+	const e: PhotoEntry = {
 		id: row.id,
 		width: row.width,
 		height: row.height,
@@ -286,6 +289,9 @@ function rowToEntry(row: PhotoRow): PhotoEntry {
 			description: row.description || '',
 		},
 	};
+	if (row.narration_text) e.narrationText = row.narration_text;
+	if (row.narration_path) e.narrationPath = row.narration_path;
+	return e;
 }
 
 /* ---------- 查询 ---------- */
@@ -299,12 +305,28 @@ export async function listAll(): Promise<PhotoEntry[]> {
 
 	const sb = getClient();
 	// 显式列举公开列,避免 SELECT * 把 artist_contact 这类敏感字段带回前端。
-	const { data, error } = await sb
+	// 迁移 0001 后多了 narration_text / narration_path;若 Supabase 还没跑迁移,
+	// 第一次查会因列不存在失败,自动回退到旧字段集,保证站点不黑屏。
+	const BASE_COLS =
+		'id,artist_slug,artist_name,collection_slug,collection_name,title,description,storage_path,width,height,format,created_at';
+	const FULL_COLS = BASE_COLS + ',narration_text,narration_path';
+	let { data, error } = await sb
 		.from('photos')
-		.select(
-			'id,artist_slug,artist_name,collection_slug,collection_name,title,description,storage_path,width,height,format,created_at',
-		)
+		.select(FULL_COLS)
 		.order('created_at', { ascending: false });
+	if (error) {
+		// 大概率是「narration_* 列不存在」,提示一次并降级
+		console.warn(
+			'[supabase] listAll 含 narration 列查询失败,回退到基本列。请到 Supabase 控制台跑 supabase/migrations/0001_*.sql。原因:',
+			error.message,
+		);
+		const fallback = await sb
+			.from('photos')
+			.select(BASE_COLS)
+			.order('created_at', { ascending: false });
+		data = fallback.data;
+		error = fallback.error;
+	}
 
 	if (error) {
 		console.error('[supabase] listAll failed:', error);

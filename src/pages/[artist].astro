@@ -47,6 +47,21 @@ export async function getStaticPaths() {
 							<span x-text="photos.length"></span> 张作品 ·
 							<span x-text="collections.length"></span> 个作品集
 						</p>
+
+						<!-- 🎙️ 自动语音导览 -->
+						<div x-show="narratableCount > 0" class="mt-6 flex flex-col items-center gap-2">
+							<button
+								@click="toggleTour()"
+								class="px-5 py-2.5 rounded-full font-medium transition-colors flex items-center gap-2"
+								:class="tourOn ? 'bg-violet-600 text-white hover:bg-violet-700' : 'bg-black text-white hover:bg-violet-600'"
+							>
+								<span x-show="!tourOn">▶ 自动语音导览</span>
+								<span x-show="tourOn">⏸ 停止导览</span>
+							</button>
+							<p class="text-xs text-gray-400">
+								<span x-text="narratableCount"></span> 张作品有 AI 合成语音解说
+							</p>
+						</div>
 					</header>
 
 					<!-- collection 标签栏 -->
@@ -97,6 +112,7 @@ export async function getStaticPaths() {
 		groupByCollection,
 		deliveryUrl,
 		srcSet,
+		narrationUrl,
 		type PhotoEntry,
 	} from '../lib/photos';
 	import { setupGallery, teardownGallery } from '../scripts/photo-grid';
@@ -109,6 +125,11 @@ export async function getStaticPaths() {
 			collections: [] as { slug: string; name: string }[],
 			activeColl: null as string | null,
 			artistName: '',
+
+			// 🎙️ 自动语音导览状态
+			tourOn: false,
+			tourIdx: -1,
+			tourAudio: null as HTMLAudioElement | null,
 
 			async init() {
 				this.slug = parseArtistSlugFromUrl();
@@ -140,7 +161,88 @@ export async function getStaticPaths() {
 				await this.$nextTick();
 				renderGrid(this.filtered());
 			},
+
+			/* ---------- 🎙️ 自动语音导览 (M3) ---------- */
+
+			get narratableCount(): number {
+				return this.filtered().filter((p) => !!p.narrationPath).length;
+			},
+
+			toggleTour() {
+				if (this.tourOn) {
+					this.stopTour();
+				} else {
+					this.startTour(0);
+				}
+			},
+
+			startTour(fromIdx: number) {
+				const list = this.filtered();
+				const idx = list.findIndex((p, i) => i >= fromIdx && p.narrationPath);
+				if (idx < 0) return;
+				this.tourOn = true;
+				this.playAt(idx);
+			},
+
+			stopTour() {
+				this.tourOn = false;
+				this.tourIdx = -1;
+				if (this.tourAudio) {
+					this.tourAudio.pause();
+					this.tourAudio = null;
+				}
+				highlightTourCard(-1);
+			},
+
+			playAt(idx: number) {
+				const list = this.filtered();
+				const p = list[idx];
+				if (!p) {
+					this.stopTour();
+					return;
+				}
+				const url = narrationUrl(p);
+				if (!url) {
+					// 这张没解说,跳到下一张
+					this.advanceTour(idx + 1);
+					return;
+				}
+				if (this.tourAudio) {
+					this.tourAudio.pause();
+					this.tourAudio = null;
+				}
+				this.tourIdx = idx;
+				highlightTourCard(idx);
+				const a = new Audio(url);
+				a.addEventListener('ended', () => this.advanceTour(idx + 1));
+				a.addEventListener('error', () => this.advanceTour(idx + 1));
+				a.play().catch((err) => {
+					console.warn('autoplay 被拦,等待用户交互', err);
+				});
+				this.tourAudio = a;
+			},
+
+			advanceTour(nextIdx: number) {
+				if (!this.tourOn) return;
+				const list = this.filtered();
+				const idx = list.findIndex((p, i) => i >= nextIdx && p.narrationPath);
+				if (idx < 0) {
+					this.stopTour();
+					return;
+				}
+				this.playAt(idx);
+			},
 		};
+	}
+
+	/** 给当前在播作品的卡片描个边,其它取消高亮 */
+	function highlightTourCard(idx: number) {
+		const grid = document.getElementById('photo-grid');
+		if (!grid) return;
+		grid.querySelectorAll<HTMLElement>('.photo-item').forEach((el, i) => {
+			el.classList.toggle('ring-4', i === idx);
+			el.classList.toggle('ring-violet-400', i === idx);
+		});
 	}
 
 	function parseArtistSlugFromUrl(): string {
@@ -189,9 +291,71 @@ export async function getStaticPaths() {
 			img.loading = 'lazy';
 			img.className = 'w-full h-full object-cover rounded-sm shadow-sm hover:shadow-lg transition-shadow';
 			a.appendChild(img);
+
+			// 🎙️ 解说播放按钮:阻止冒泡,不触发 glightbox
+			const url = narrationUrl(p);
+			if (url) {
+				const btn = document.createElement('button');
+				btn.type = 'button';
+				btn.className =
+					'absolute bottom-2 right-2 px-2.5 py-1 rounded-full bg-black/70 hover:bg-violet-600 text-white text-xs font-medium backdrop-blur-sm transition-colors flex items-center gap-1';
+				btn.dataset.narrationUrl = url;
+				btn.innerHTML = '<span class="text-[10px]">▶</span> 听';
+				btn.title = 'AI 合成语音解说';
+				btn.addEventListener('click', (ev) => {
+					ev.preventDefault();
+					ev.stopPropagation();
+					playSingleNarration(btn, url);
+				});
+				a.appendChild(btn);
+			}
+
 			grid.appendChild(a);
 		}
 		setupGallery();
+	}
+
+	/** 单张解说播放(非导览模式),按钮自己管自己 toggle */
+	let _singleAudio: HTMLAudioElement | null = null;
+	let _singleBtn: HTMLButtonElement | null = null;
+	function playSingleNarration(btn: HTMLButtonElement, url: string) {
+		const sameBtn = _singleBtn === btn;
+		if (_singleAudio) {
+			_singleAudio.pause();
+			_singleAudio = null;
+		}
+		if (_singleBtn) {
+			_singleBtn.innerHTML = '<span class="text-[10px]">▶</span> 听';
+			_singleBtn.classList.remove('bg-violet-600');
+		}
+		if (sameBtn) {
+			_singleBtn = null;
+			return; // 第二次点同一个 → 停
+		}
+		const a = new Audio(url);
+		a.addEventListener('ended', () => {
+			btn.innerHTML = '<span class="text-[10px]">▶</span> 听';
+			btn.classList.remove('bg-violet-600');
+			if (_singleAudio === a) {
+				_singleAudio = null;
+				_singleBtn = null;
+			}
+		});
+		a.addEventListener('error', () => {
+			btn.innerHTML = '⚠️';
+			if (_singleAudio === a) {
+				_singleAudio = null;
+				_singleBtn = null;
+			}
+		});
+		btn.innerHTML = '<span class="text-[10px]">⏸</span> 停';
+		btn.classList.add('bg-violet-600');
+		a.play().catch(() => {
+			btn.innerHTML = '<span class="text-[10px]">▶</span> 听';
+			btn.classList.remove('bg-violet-600');
+		});
+		_singleAudio = a;
+		_singleBtn = btn;
 	}
 
 	(window as any).artistPage = artistPage;
