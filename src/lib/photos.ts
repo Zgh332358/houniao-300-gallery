@@ -589,11 +589,19 @@ export async function setNarration(
 		return;
 	}
 	const sb = getClient();
-	const { error } = await sb
+	// 必须 .select() 拿回受影响行 —— 否则 RLS 静默拒绝 UPDATE 时(返回 0 行)
+	// supabase-js 把它当成功,发布流程一路绿 ✓ 但 DB 始终是空。见 migration 0002。
+	const { data, error } = await sb
 		.from('photos')
 		.update({ narration_text: narrationText, narration_path: narrationPath })
-		.eq('id', photoId);
+		.eq('id', photoId)
+		.select('id');
 	if (error) throw new Error(`写回解说词失败: ${error.message}`);
+	if (!data || data.length === 0) {
+		throw new Error(
+			'写回解说词失败: 0 行受影响(photos 表未放行 anon UPDATE,请到 Supabase 跑 migrations/0002)',
+		);
+	}
 }
 
 /** 把 audio bucket 里的解说 mp3 拼成公开播放 URL(访客侧零 Key 消费)。 */
