@@ -114,6 +114,12 @@ supabase: {
 },
 ```
 
+### 5.5 后续迁移(里程碑 B 开始)
+
+声音克隆、双语、AI 解说等功能新增的表结构和字段,放在 [`supabase/migrations/`](supabase/migrations/)。
+**按文件名顺序**到 SQL Editor 跑一遍即可。所有脚本都是幂等的,可重复执行。
+详见 [`supabase/migrations/README.md`](supabase/migrations/README.md)。
+
 ### 6. 跑起来
 
 ```bash
