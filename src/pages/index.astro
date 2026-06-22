@@ -3,14 +3,20 @@ import MainLayout from '../layouts/MainLayout.astro';
 import LandingHero from '../components/LandingHero-1.astro';
 import FeaturedGallery from '../components/FeaturedGallery.astro';
 import FeaturedWorkScroll from '../components/FeaturedWorkScroll.astro';
+import JourneyPreview from '../components/JourneyPreview.astro';
 ---
 
 <MainLayout>
+	<!-- 首屏:tagline + 2 CTA -->
 	<section class="relative min-h-screen items-center flex py-20 md:py-16 overflow-hidden">
 		<LandingHero />
 		<FeaturedWorkScroll />
 	</section>
 
+	<!-- 第二屏:5 步流程,让访客在点「开始」前就知道路径 -->
+	<JourneyPreview />
+
+	<!-- 第三屏:已上线艺术家作品(可选,鼓舞用) -->
 	<section class="featured-section py-20">
 		<FeaturedGallery />
 	</section>
