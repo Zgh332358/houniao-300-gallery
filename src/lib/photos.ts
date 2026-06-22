@@ -61,10 +61,6 @@ export interface PhotoEntry {
 	tags?: PhotoTags;
 	/** 策展短评(里程碑 E) */
 	curatorNote?: string;
-	/** AI 解说词原文(里程碑 D) */
-	narrationText?: string;
-	/** 解说 mp3 在 audio bucket 的路径(里程碑 D) */
-	narrationPath?: string;
 	/** 内容审核结果(里程碑 E) */
 	moderation?: PhotoModeration;
 	/** mock-only：picsum seed 占位图 */
@@ -270,8 +266,6 @@ interface PhotoRow {
 	/** 迁移 0001 后新增,旧库可能缺 */
 	title_en?: string | null;
 	description_en?: string | null;
-	narration_text?: string | null;
-	narration_path?: string | null;
 }
 
 function rowToEntry(row: PhotoRow): PhotoEntry {
@@ -293,8 +287,6 @@ function rowToEntry(row: PhotoRow): PhotoEntry {
 	};
 	if (row.title_en) e.meta.titleEn = row.title_en;
 	if (row.description_en) e.meta.descriptionEn = row.description_en;
-	if (row.narration_text) e.narrationText = row.narration_text;
-	if (row.narration_path) e.narrationPath = row.narration_path;
 	return e;
 }
 
@@ -309,19 +301,19 @@ export async function listAll(): Promise<PhotoEntry[]> {
 
 	const sb = getClient();
 	// 显式列举公开列,避免 SELECT * 把 artist_contact 这类敏感字段带回前端。
-	// 迁移 0001 后多了 narration_text / narration_path;若 Supabase 还没跑迁移,
+	// 迁移 0001 后多了 title_en / description_en;若 Supabase 还没跑迁移,
 	// 第一次查会因列不存在失败,自动回退到旧字段集,保证站点不黑屏。
 	const BASE_COLS =
 		'id,artist_slug,artist_name,collection_slug,collection_name,title,description,storage_path,width,height,format,created_at';
-	const FULL_COLS = BASE_COLS + ',title_en,description_en,narration_text,narration_path';
+	const FULL_COLS = BASE_COLS + ',title_en,description_en';
 	let { data, error } = await sb
 		.from('photos')
 		.select(FULL_COLS)
 		.order('created_at', { ascending: false });
 	if (error) {
-		// 大概率是「narration_* 列不存在」,提示一次并降级
+		// 大概率是「title_en/description_en 列不存在」,提示一次并降级
 		console.warn(
-			'[supabase] listAll 含 narration 列查询失败,回退到基本列。请到 Supabase 控制台跑 supabase/migrations/0001_*.sql。原因:',
+			'[supabase] listAll 含双语列查询失败,回退到基本列。请到 Supabase 控制台跑 supabase/migrations/0001_*.sql。原因:',
 			error.message,
 		);
 		const fallback = await sb
@@ -524,90 +516,4 @@ export function deliveryUrl(entry: PhotoEntry, opts: { width?: number } = {}): s
 export function srcSet(_entry: PhotoEntry): string {
 	// Supabase Free 不带 image transformations，无法生成多尺寸 srcset
 	return '';
-}
-
-/* ---------- 解说音频 (M3) ---------- */
-
-/**
- * 把合成好的 mp3 上传到 audio bucket,路径 narrations/<artist>/<photoId>.mp3
- * 返回 storage path,供 photos 行的 narration_path 字段写入。
- */
-export async function uploadNarrationMp3(
-	mp3: Blob,
-	artistSlug: string,
-	photoId: string,
-): Promise<string> {
-	const path = `narrations/${artistSlug}/${photoId}.mp3`;
-	if (getMode() === 'mock') {
-		return `mock://${path}`;
-	}
-	const url = `${cfg.url}/storage/v1/object/audio/${path}`;
-	const res = await fetch(url, {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${cfg.anonKey}`,
-			apikey: cfg.anonKey,
-			'Content-Type': mp3.type || 'audio/mpeg',
-			'x-upsert': 'true',
-		},
-		body: mp3,
-	});
-	if (!res.ok) {
-		let msg = `HTTP ${res.status}`;
-		try {
-			const j = await res.json();
-			msg = j?.error || j?.message || msg;
-		} catch {
-			/* keep */
-		}
-		throw new Error(`解说音频上传失败: ${msg}`);
-	}
-	return path;
-}
-
-/** 把生成好的解说词与 mp3 路径写回 photos 行(M3 发布末步)。 */
-export async function setNarration(
-	photoId: string,
-	narrationText: string,
-	narrationPath: string,
-): Promise<void> {
-	if (getMode() === 'mock') {
-		// mock: 把字段写回 localStorage 中对应的上传记录
-		try {
-			const raw = localStorage.getItem(MOCK_UPLOAD_KEY);
-			if (!raw) return;
-			const arr: PhotoEntry[] = JSON.parse(raw);
-			const idx = arr.findIndex((p) => p.id === photoId);
-			if (idx >= 0) {
-				arr[idx].narrationText = narrationText;
-				arr[idx].narrationPath = narrationPath;
-				localStorage.setItem(MOCK_UPLOAD_KEY, JSON.stringify(arr));
-			}
-		} catch {
-			/* ignore */
-		}
-		return;
-	}
-	const sb = getClient();
-	// 必须 .select() 拿回受影响行 —— 否则 RLS 静默拒绝 UPDATE 时(返回 0 行)
-	// supabase-js 把它当成功,发布流程一路绿 ✓ 但 DB 始终是空。见 migration 0002。
-	const { data, error } = await sb
-		.from('photos')
-		.update({ narration_text: narrationText, narration_path: narrationPath })
-		.eq('id', photoId)
-		.select('id');
-	if (error) throw new Error(`写回解说词失败: ${error.message}`);
-	if (!data || data.length === 0) {
-		throw new Error(
-			'写回解说词失败: 0 行受影响(photos 表未放行 anon UPDATE,请到 Supabase 跑 migrations/0002)',
-		);
-	}
-}
-
-/** 把 audio bucket 里的解说 mp3 拼成公开播放 URL(访客侧零 Key 消费)。 */
-export function narrationUrl(entry: PhotoEntry): string {
-	const p = entry.narrationPath;
-	if (!p) return '';
-	if (p.startsWith('mock://')) return ''; // mock 走不出本机
-	return `${cfg.url}/storage/v1/object/public/audio/${p}`;
 }

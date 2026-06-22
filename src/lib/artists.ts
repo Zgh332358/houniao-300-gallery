@@ -7,9 +7,6 @@
  *  - 匿名写入路径(INSERT/UPDATE)允许填 contact —— Supabase RLS 不限列写,
  *    所以这一层在客户端是可信的:艺术家自己提交自己的信息,我们存,但读出来的
  *    匿名 SELECT 都看不到 contact。
- *  - 声音克隆相关字段(voice_id, voice_sample_path, consent_at)通过 setArtistVoice
- *    单独写。consent_at 必须由调用方传入,不允许默认 now() —— 强制调用方在 UI
- *    上勾选授权后再调本函数。
  *
  * mock 模式: localStorage 'pf:mock-artists:v1',结构与 live 一致;contact 字段
  * 仅在本机存,跨设备不同步。
@@ -25,9 +22,6 @@ export interface Artist {
 	slug: string;
 	name: string;
 	bio: string;
-	voiceId: string | null;
-	voiceSamplePath: string | null;
-	consentAt: string | null;
 	createdAt: string;
 }
 
@@ -66,9 +60,6 @@ interface ArtistRow {
 	slug: string;
 	name: string;
 	bio: string | null;
-	voice_id: string | null;
-	voice_sample_path: string | null;
-	consent_at: string | null;
 	created_at: string;
 }
 
@@ -77,9 +68,6 @@ function rowToArtist(row: ArtistRow): Artist {
 		slug: row.slug,
 		name: row.name,
 		bio: row.bio || '',
-		voiceId: row.voice_id,
-		voiceSamplePath: row.voice_sample_path,
-		consentAt: row.consent_at,
 		createdAt: row.created_at,
 	};
 }
@@ -128,7 +116,7 @@ export async function getArtist(slug: string): Promise<Artist | null> {
 	const sb = getClient();
 	const { data, error } = await sb
 		.from('artists_public')
-		.select('slug,name,bio,voice_id,voice_sample_path,consent_at,created_at')
+		.select('slug,name,bio,created_at')
 		.eq('slug', slug)
 		.maybeSingle();
 	if (error) {
@@ -148,7 +136,7 @@ export async function listArtists(): Promise<Artist[]> {
 	const sb = getClient();
 	const { data, error } = await sb
 		.from('artists_public')
-		.select('slug,name,bio,voice_id,voice_sample_path,consent_at,created_at')
+		.select('slug,name,bio,created_at')
 		.order('created_at', { ascending: false });
 	if (error) {
 		console.error('[supabase] listArtists failed:', error);
@@ -173,9 +161,6 @@ export async function upsertArtist(input: ArtistUpsertInput): Promise<void> {
 			name: input.name,
 			bio: input.bio || existing?.bio || '',
 			contact: input.contact,
-			voiceId: existing?.voiceId ?? null,
-			voiceSamplePath: existing?.voiceSamplePath ?? null,
-			consentAt: existing?.consentAt ?? null,
 			createdAt: existing?.createdAt ?? new Date().toISOString(),
 		};
 		saveMockStore(store);
@@ -194,90 +179,4 @@ export async function upsertArtist(input: ArtistUpsertInput): Promise<void> {
 			{ onConflict: 'slug' },
 		);
 	if (error) throw new Error(`upsertArtist 失败: ${error.message}`);
-}
-
-/**
- * 设置艺术家的克隆音色。**调用方必须先在 UI 勾选「我授权克隆我的声音」**,
- * 才传入 `consentedAt`。本函数不会自己生成时间戳,避免 UI 漏掉勾选时静默通过。
- */
-export async function setArtistVoice(input: {
-	slug: string;
-	voiceId: string;
-	voiceSamplePath: string;
-	consentedAt: string;
-}): Promise<void> {
-	if (!input.slug || !input.voiceId || !input.consentedAt) {
-		throw new Error('slug/voiceId/consentedAt 必填');
-	}
-	if (!isLive()) {
-		const store = getMockStore();
-		const existing = store[input.slug];
-		if (!existing) throw new Error(`mock: artist ${input.slug} 不存在,先 upsertArtist`);
-		existing.voiceId = input.voiceId;
-		existing.voiceSamplePath = input.voiceSamplePath;
-		existing.consentAt = input.consentedAt;
-		saveMockStore(store);
-		return;
-	}
-	const sb = getClient();
-	const { error } = await sb
-		.from('artists')
-		.update({
-			voice_id: input.voiceId,
-			voice_sample_path: input.voiceSamplePath,
-			consent_at: input.consentedAt,
-		})
-		.eq('slug', input.slug);
-	if (error) throw new Error(`setArtistVoice 失败: ${error.message}`);
-}
-
-/* ---------- 音色样本: audio bucket 上传 ---------- */
-
-/**
- * 把艺术家的音色样本(5~10s wav/mp3)上传到 audio bucket 的
- * `voice-samples/<slug>.<ext>`,返回 storage path。
- *
- * mock 模式下不上传(无后端),直接生成一个虚拟路径,UI 用 ObjectURL 自己播放。
- */
-export async function uploadVoiceSample(
-	slug: string,
-	audio: Blob,
-	ext = 'wav',
-): Promise<string> {
-	if (!slug) throw new Error('slug 必填');
-	const cleanExt = ext.toLowerCase().replace(/[^a-z0-9]/g, '') || 'wav';
-	const path = `voice-samples/${slug}.${cleanExt}`;
-	if (!isLive()) {
-		// mock: 不实际上传,UI 用本地 ObjectURL 播放即可
-		return `mock://${path}`;
-	}
-	const url = `${cfg.url}/storage/v1/object/audio/${path}`;
-	const res = await fetch(url, {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${cfg.anonKey}`,
-			apikey: cfg.anonKey,
-			'Content-Type': audio.type || 'audio/wav',
-			'x-upsert': 'true',
-		},
-		body: audio,
-	});
-	if (!res.ok) {
-		let msg = `HTTP ${res.status}`;
-		try {
-			const j = await res.json();
-			msg = j?.error || j?.message || msg;
-		} catch {
-			/* keep */
-		}
-		throw new Error(`音色样本上传失败: ${msg}`);
-	}
-	return path;
-}
-
-/** 给前端拼一个公开播放 URL(audio bucket 已设 public=true)。 */
-export function audioPublicUrl(storagePath: string): string {
-	if (!storagePath) return '';
-	if (storagePath.startsWith('mock://')) return ''; // mock 用 ObjectURL,不走这里
-	return `${cfg.url}/storage/v1/object/public/audio/${storagePath}`;
 }

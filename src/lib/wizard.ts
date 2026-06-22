@@ -1,10 +1,10 @@
 /**
- * 上传向导的状态层 —— 跨 6 个独立页面共享数据。
+ * 上传向导的状态层 —— 跨 5 个独立页面共享数据。
  *
  * 设计:
- *   - 文本类(姓名/slug/contact/作品集名/voice_id):localStorage,沿用既有的 key
+ *   - 文本类(姓名/slug/contact/作品集名):localStorage,沿用既有的 key
  *   - 图片(Blob + 元数据/AI 建议/对话历史):IndexedDB,File 对象塞不进 localStorage
- *   - 实际网络写入(uploadPhoto / setNarration)推迟到第 ⑥ 步「发布」时统一做
+ *   - 实际网络写入(uploadPhoto)推迟到第 ⑤ 步「发布」时统一做
  *
  * IndexedDB:
  *   DB: pf-wizard (version 1)
@@ -17,7 +17,6 @@
 
 const IDENTITY_KEY = 'pf:identity:v1';
 const COLL_KEY = 'pf:lastColl:v1';
-const VOICES_KEY = 'pf:voices:v1';
 
 export interface Identity {
 	artistName: string;
@@ -64,34 +63,6 @@ export function getCollection(): Collection {
 
 export function setCollection(c: Collection): void {
 	localStorage.setItem(COLL_KEY, JSON.stringify(c));
-}
-
-export interface VoiceRecord {
-	voiceId: string;
-	voiceSamplePath: string;
-	consentAt: string;
-}
-
-export function getVoiceForSlug(slug: string): VoiceRecord | null {
-	if (!slug) return null;
-	try {
-		const all = JSON.parse(localStorage.getItem(VOICES_KEY) || '{}');
-		const rec = all[slug];
-		if (rec && rec.voiceId) return rec as VoiceRecord;
-		return null;
-	} catch {
-		return null;
-	}
-}
-
-export function saveVoiceForSlug(slug: string, rec: VoiceRecord): void {
-	try {
-		const all = JSON.parse(localStorage.getItem(VOICES_KEY) || '{}');
-		all[slug] = rec;
-		localStorage.setItem(VOICES_KEY, JSON.stringify(all));
-	} catch {
-		/* 配额满放弃 */
-	}
 }
 
 /* ============================================================
@@ -289,12 +260,11 @@ function stripExt(name: string): string {
 
 import { hasAiKey } from './ai';
 
-export type StepName = 'setup' | 'identity' | 'voice' | 'collection' | 'photos' | 'publish';
+export type StepName = 'setup' | 'identity' | 'collection' | 'photos' | 'publish';
 
 export const STEP_ORDER: StepName[] = [
 	'setup',
 	'identity',
-	'voice',
 	'collection',
 	'photos',
 	'publish',
@@ -303,7 +273,6 @@ export const STEP_ORDER: StepName[] = [
 export const STEP_LABEL: Record<StepName, string> = {
 	setup: 'AI 助手设置',
 	identity: '你是谁',
-	voice: '你的声音',
 	collection: '作品集',
 	photos: '选图',
 	publish: '发布',
@@ -322,17 +291,10 @@ export async function isStepReady(step: StepName): Promise<boolean> {
 			return true; // 第一步总是可进
 		case 'identity':
 			return hasAiKey();
-		case 'voice': {
-			if (!hasAiKey()) return false;
-			const id = getIdentity();
-			return !!(id.artistName.trim() && id.artistSlug);
-		}
 		case 'collection': {
 			if (!hasAiKey()) return false;
 			const id = getIdentity();
-			if (!id.artistName.trim() || !id.artistSlug) return false;
-			const voice = getVoiceForSlug(id.artistSlug);
-			return !!voice;
+			return !!(id.artistName.trim() && id.artistSlug);
 		}
 		case 'photos': {
 			if (!(await isStepReady('collection'))) return false;

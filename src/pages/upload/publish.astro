@@ -5,7 +5,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 <WizardLayout
 	step="publish"
 	title="发布"
-	subtitle="检查无误后点「发布」。系统会一张张:把图传到 Supabase Storage、写元数据、用你的克隆音色合成解说 mp3、写回数据库。"
+	subtitle="检查无误后点「发布」。系统会一张张把图传到 Supabase Storage 并写入元数据。"
 >
 	<div x-data="publishPage()" x-init="init()" class="space-y-6">
 		<!-- 汇总 -->
@@ -27,10 +27,6 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					<dd class="font-medium" x-text="collectionName"></dd>
 				</div>
 				<div class="flex justify-between">
-					<dt class="text-gray-500">声音</dt>
-					<dd class="font-mono text-xs text-gray-500" x-text="voiceId || '(未登记)'"></dd>
-				</div>
-				<div class="flex justify-between">
 					<dt class="text-gray-500">作品数</dt>
 					<dd class="font-medium" x-text="`${photos.length} 张`"></dd>
 				</div>
@@ -44,14 +40,12 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					<img :src="p.previewUrl" class="w-full h-full object-cover" />
 					<div
 						class="absolute inset-0 flex items-center justify-center text-white text-xs font-medium text-center px-1"
-						:class="p.publishStatus === 'pending' ? 'bg-black/40' : (p.publishStatus === 'uploading' ? 'bg-violet-600/70' : (p.publishStatus === 'narrating' ? 'bg-violet-700/80' : (p.publishStatus === 'done' && !p.publishError ? 'bg-green-600/60' : (p.publishStatus === 'done' && p.publishError ? 'bg-amber-600/75' : (p.publishStatus === 'error' ? 'bg-red-600/70' : 'bg-transparent')))))"
+						:class="p.publishStatus === 'pending' ? 'bg-black/40' : (p.publishStatus === 'uploading' ? 'bg-violet-600/70' : (p.publishStatus === 'done' ? 'bg-green-600/60' : (p.publishStatus === 'error' ? 'bg-red-600/70' : 'bg-transparent')))"
 						x-show="p.publishStatus !== 'idle'"
 					>
 						<span x-show="p.publishStatus === 'pending'">排队</span>
 						<span x-show="p.publishStatus === 'uploading'" x-text="`传 ${p.uploadPct}%`"></span>
-						<span x-show="p.publishStatus === 'narrating'">🎙️ 解说</span>
-						<span x-show="p.publishStatus === 'done' && !p.publishError">✓ 完整</span>
-						<span x-show="p.publishStatus === 'done' && p.publishError">⚠️ 无解说</span>
+						<span x-show="p.publishStatus === 'done'">✓ 已发布</span>
 						<span x-show="p.publishStatus === 'error'">! 失败</span>
 					</div>
 				</div>
@@ -60,26 +54,21 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 
 		<!-- 失败明细列表(发布完才显示) -->
 		<section
-			x-show="!publishing && photos.some((p) => p.publishError || p.publishStatus === 'error')"
+			x-show="!publishing && photos.some((p) => p.publishStatus === 'error')"
 			class="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-2 text-sm"
 		>
-			<p class="font-semibold text-amber-900">⚠️ 部分图片有问题:</p>
+			<p class="font-semibold text-amber-900">⚠️ 部分图片发布失败:</p>
 			<ul class="space-y-1 text-amber-900">
-				<template x-for="p in photos.filter((x) => x.publishError || x.publishStatus === 'error')" :key="p.id">
+				<template x-for="p in photos.filter((x) => x.publishStatus === 'error')" :key="p.id">
 					<li class="flex gap-2">
 						<img :src="p.previewUrl" class="w-10 h-10 object-cover rounded flex-shrink-0" />
 						<span class="text-xs leading-relaxed">
 							<strong x-text="p.title || p.filename"></strong>:
-							<span x-text="p.publishError || `发布失败:${p.error || '未知'}`"></span>
+							<span x-text="p.publishError || '未知错误'"></span>
 						</span>
 					</li>
 				</template>
 			</ul>
-			<p class="text-xs text-amber-700 pt-2">
-				图本身已经传上去了,只是解说音频没生成。打开 DevTools Console(F12)看
-				<code class="bg-amber-100 px-1 rounded">[synthesizeSpeech] 失败 body</code> 那一行,
-				把内容贴出来定位原因。
-			</p>
 		</section>
 
 		<!-- 发布按钮 + 进度 -->
@@ -96,7 +85,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					<span x-show="allDone">✓ 已全部发布</span>
 				</button>
 				<p class="text-xs text-gray-500" x-show="publishing">
-					本步会调一次 Step API 生成解说词 + 一次 stepaudio-2.5-tts 合成 mp3 · 用你自己的 Key 跑
+					本步会把每张图上传到 Supabase Storage 并写入元数据
 				</p>
 			</div>
 
@@ -138,20 +127,17 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					>再传一组(回到选图)</button>
 				</div>
 				<p class="text-xs text-violet-700 pt-1">
-					把链接发给朋友、放小红书简介 — 任何人打开都能听 AI 用你的声音讲你的每一张画。
+					把链接发给朋友、放小红书简介 — 任何人打开都能浏览你的作品。
 				</p>
 			</div>
 		</section>
 	</div>
 
 	<script>
-		import { uploadPhoto, uploadNarrationMp3, setNarration } from '../../lib/photos';
-		import { generateNarrationText } from '../../lib/ai';
-		import { synthesizeSpeech } from '../../lib/ai-voice';
+		import { uploadPhoto } from '../../lib/photos';
 		import {
 			getIdentity,
 			getCollection,
-			getVoiceForSlug,
 			listPhotos,
 			removePhoto,
 			clearAllPhotos,
@@ -162,7 +148,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 
 		interface PhotoView extends WizardPhoto {
 			previewUrl: string;
-			publishStatus: 'idle' | 'pending' | 'uploading' | 'narrating' | 'done' | 'error';
+			publishStatus: 'idle' | 'pending' | 'uploading' | 'done' | 'error';
 			uploadPct: number;
 			publishError: string;
 		}
@@ -174,7 +160,6 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 				artistContact: '',
 				collectionName: '',
 				collectionSlug: '',
-				voiceId: '',
 				photos: [] as PhotoView[],
 				publishing: false,
 				globalError: '',
@@ -207,8 +192,6 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					const c = getCollection();
 					this.collectionName = c.name;
 					this.collectionSlug = c.slug;
-					const v = getVoiceForSlug(this.artistSlug);
-					this.voiceId = v?.voiceId || '';
 
 					const list = await listPhotos();
 					this.photos = list.map((p) => ({
@@ -225,10 +208,6 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 
 				async startPublish() {
 					if (this.publishing) return;
-					if (!this.voiceId) {
-						this.globalError = '没找到你登记的声音 — 回到「你的声音」重做一次';
-						return;
-					}
 					this.publishing = true;
 					this.globalError = '';
 					for (const p of this.photos) p.publishStatus = 'pending';
@@ -243,7 +222,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					}
 					this.publishing = false;
 
-					// 全发完了:清掉 IDB 里的图,但 voice/identity 保留
+					// 全发完了:清掉 IDB 里的图,但 identity 保留
 					if (this.allDone) {
 						await clearAllPhotos();
 					}
@@ -253,7 +232,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					p.publishStatus = 'uploading';
 					p.uploadPct = 0;
 					const file = new File([p.blob], p.filename, { type: p.mimeType });
-					const entry = await uploadPhoto(file, {
+					await uploadPhoto(file, {
 						artistSlug: this.artistSlug,
 						collectionSlug: this.collectionSlug,
 						meta: {
@@ -272,34 +251,6 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 						},
 					});
 					p.uploadPct = 100;
-
-					// 解说生成 + 合成
-					p.publishStatus = 'narrating';
-					const nr = await generateNarrationText(file, {
-						title: p.title,
-						description: p.description,
-						tags: p.tags,
-						curatorNote: p.curatorNote,
-					});
-					if (!nr.ok) {
-						p.publishError = `解说词失败: ${nr.error} (图片仍发布成功)`;
-						p.publishStatus = 'done';
-						await removePhoto(p.id);
-						return;
-					}
-					const sr = await synthesizeSpeech({
-						voiceId: this.voiceId,
-						text: nr.text,
-						// 不传 style/emotion:stepaudio-2.5-tts 不接受 voice_label,会 400
-					});
-					if (!sr.ok) {
-						p.publishError = `合成失败: ${sr.error} (图片仍发布成功)`;
-						p.publishStatus = 'done';
-						await removePhoto(p.id);
-						return;
-					}
-					const path = await uploadNarrationMp3(sr.audio, this.artistSlug, entry.id);
-					await setNarration(entry.id, nr.text, path);
 					p.publishStatus = 'done';
 					await removePhoto(p.id);
 				},
