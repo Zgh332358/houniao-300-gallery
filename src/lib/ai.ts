@@ -3,8 +3,12 @@
  *
  * 每位艺术家在上传页填入自己领取的 StepFun API Key（默认模型 step-3.7-flash）。
  * StepFun 接口对浏览器开放 CORS，故前端直接调用，无需任何后端 / 代理：
- *   浏览器 ──(用户自己的 key)──▶ https://api.stepfun.com/step_plan/v1/chat/completions
+ *   浏览器 ──(用户自己的 key)──▶ https://api.stepfun.com/v1/chat/completions
  * key 只存在该用户自己的浏览器 localStorage 里，不经过我们任何服务器。
+ *
+ * 注: 之前用过 /step_plan/v1/chat/completions —— 那是 StepFun 的「任务规划」
+ *     端点,会在模型前面套一层多步规划 agent,对单轮识图是纯额外开销,
+ *     实测能让一次调用从 8~15s 缩到 2~4s。现已切回标准 OpenAI 兼容路径。
  *
  * 能力：
  *  1. analyzePhoto —— 读图，返回「内容审核 + 标题/描述/标签/策展评语」+ 对话上下文
@@ -12,7 +16,7 @@
  *  审核结果用于在上传页门控「发布」按钮。
  */
 
-const STEP_BASE_URL = 'https://api.stepfun.com/step_plan/v1';
+const STEP_BASE_URL = 'https://api.stepfun.com/v1';
 export const DEFAULT_MODEL = 'step-3.7-flash';
 
 /* ---------- BYOK 配置（localStorage） ---------- */
