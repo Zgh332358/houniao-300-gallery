@@ -14,6 +14,39 @@ import MainLayout from '../layouts/MainLayout.astro';
 			</div>
 
 			<div id="upload-app" x-data="uploadApp()" x-init="init()" class="space-y-8">
+				<!-- 进度条:5 步引导 -->
+				<div class="sticky top-16 -mx-4 sm:mx-0 z-40 bg-white/95 backdrop-blur border-b border-gray-200 mb-2">
+					<div class="px-4 sm:px-2 py-3 overflow-x-auto">
+						<div class="flex items-center gap-1 sm:gap-2 min-w-max">
+							<template x-for="(s, idx) in steps" :key="s.n">
+								<div class="flex items-center gap-1 sm:gap-2">
+									<div class="flex items-center gap-1.5 sm:gap-2">
+										<div
+											class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold border-2 transition-colors flex-shrink-0"
+											:class="s.done ? 'bg-violet-600 border-violet-600 text-white' : (currentStep === s.n ? 'bg-white border-violet-600 text-violet-600 ring-2 ring-violet-200' : 'bg-white border-gray-300 text-gray-400')"
+										>
+											<span x-show="!s.done" x-text="s.n"></span>
+											<span x-show="s.done">✓</span>
+										</div>
+										<span
+											class="text-xs sm:text-sm whitespace-nowrap"
+											:class="s.done || currentStep === s.n ? 'text-gray-800 font-medium' : 'text-gray-400'"
+										>
+											<span x-text="s.label"></span>
+											<span x-show="s.optional" class="text-gray-400 text-[10px]">(可选)</span>
+										</span>
+									</div>
+									<div
+										x-show="idx < steps.length - 1"
+										class="h-px w-4 sm:w-8 flex-shrink-0"
+										:class="s.done ? 'bg-violet-600' : 'bg-gray-200'"
+									></div>
+								</div>
+							</template>
+						</div>
+					</div>
+				</div>
+
 				<!-- mode 提示 -->
 				<template x-if="mode === 'mock'">
 					<div class="border border-blue-200 bg-blue-50 text-blue-900 p-4 rounded-lg text-sm">
@@ -761,6 +794,29 @@ import MainLayout from '../layouts/MainLayout.astro';
 			},
 			get pendingCount() {
 				return this.files.filter((f: FileItem) => f.status === 'idle').length;
+			},
+
+			/* ---------- 进度条 (I) ---------- */
+			get steps() {
+				return [
+					{ n: 1, label: '你是谁', done: this.step1Done, optional: false },
+					{ n: 2, label: '你的声音', done: this.voiceState === 'done', optional: true },
+					{ n: 3, label: '作品集', done: this.step2Done, optional: false },
+					{ n: 4, label: '选图', done: this.files.length > 0, optional: false },
+					{
+						n: 5,
+						label: '发布',
+						done: this.doneCount > 0 && this.pendingCount === 0,
+						optional: false,
+					},
+				];
+			},
+			get currentStep() {
+				// 声音是可选,从主进度里跳过它
+				if (!this.step1Done) return 1;
+				if (!this.step2Done) return 3;
+				if (this.files.length === 0) return 4;
+				return 5;
 			},
 			get doneCount() {
 				return this.files.filter((f: FileItem) => f.status === 'done').length;
