@@ -36,9 +36,9 @@ const nextHref = next ? stepHref(base, next) : '';
 	<div class="pt-20 md:pt-24">
 		<UploadStepper current={step} />
 
-		<section class="pt-8 pb-16" data-wizard-step={step}>
+		<section class="pt-8 pb-16 wizard-content" data-wizard-step={step}>
 			<div class="container-custom max-w-3xl mx-auto px-4">
-				<header class="mb-8">
+				<header class="mb-8 wizard-anim-header">
 					<p class="text-xs text-violet-600 font-medium tracking-widest uppercase mb-1">
 						第 {idx + 1} / {STEP_ORDER.length} 步
 					</p>
@@ -48,44 +48,144 @@ const nextHref = next ? stepHref(base, next) : '';
 					{subtitle && <p class="text-gray-600 leading-relaxed">{subtitle}</p>}
 				</header>
 
-				<slot />
+				<div class="wizard-anim-body">
+					<slot />
 
-				<!-- 内容末尾的导航 — 大、紫、显眼;不要藏在 fixed bottom 里 -->
-				<div
-					class="mt-12 pt-8 border-t border-gray-200 flex items-center justify-between gap-3 flex-wrap"
-				>
-					{
-						prev ? (
-							<a
-								href={prevHref}
-								class="px-5 py-3 text-sm text-gray-600 hover:text-gray-900 hover:underline flex items-center gap-1"
-							>
-								← {STEP_LABEL[prev]}
-							</a>
-						) : (
-							<span />
-						)
-					}
+					<!-- 内容末尾的导航 — 大、紫、显眼;不要藏在 fixed bottom 里 -->
+					<div
+						class="mt-12 pt-8 border-t border-gray-200 flex items-center justify-between gap-3 flex-wrap"
+					>
+						{
+							prev ? (
+								<a
+									href={prevHref}
+									class="px-5 py-3 text-sm text-gray-600 hover:text-gray-900 hover:underline flex items-center gap-1"
+								>
+									← {STEP_LABEL[prev]}
+								</a>
+							) : (
+								<span />
+							)
+						}
 
-					{
-						next ? (
-							<a
-								id="wizard-next"
-								href={nextHref}
-								class="wizard-next-btn inline-flex items-center gap-2 px-7 py-3.5 bg-violet-600 text-white rounded-lg font-semibold text-base shadow-lg shadow-violet-500/20 hover:bg-violet-700 hover:shadow-violet-500/30 transition-all pointer-events-none opacity-40"
-								data-next-step={next}
-							>
-								下一步:{STEP_LABEL[next]} →
-							</a>
-						) : (
-							<span class="text-sm text-gray-500">最后一步 — 在内容里点「开始发布」</span>
-						)
-					}
+						{
+							next ? (
+								<a
+									id="wizard-next"
+									href={nextHref}
+									class="wizard-next-btn inline-flex items-center gap-2 px-7 py-3.5 bg-violet-600 text-white rounded-lg font-semibold text-base shadow-lg shadow-violet-500/20 hover:bg-violet-700 hover:shadow-violet-500/30 transition-all pointer-events-none opacity-40"
+									data-next-step={next}
+								>
+									下一步:{STEP_LABEL[next]} →
+								</a>
+							) : (
+								<span class="text-sm text-gray-500">最后一步 — 在内容里点「开始发布」</span>
+							)
+						}
+					</div>
 				</div>
 			</div>
 		</section>
 	</div>
 </MainLayout>
+
+<style>
+	/* 进入动画:每一步页面加载时,标题先到位,主体稍后跟上 — 走过场感 */
+	.wizard-anim-header {
+		animation: wizardFadeUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+	}
+	.wizard-anim-body {
+		animation: wizardFadeUp 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+	}
+	@keyframes wizardFadeUp {
+		from {
+			opacity: 0;
+			transform: translateY(18px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	/* 进度条单独 fade,不参与上下移动,稳重 */
+	:global(#upload-stepper) {
+		animation: wizardStepperFade 0.35s ease both;
+	}
+	@keyframes wizardStepperFade {
+		from {
+			opacity: 0.4;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	/* 用户系统设置「减少动效」时,关掉所有进入动画 */
+	@media (prefers-reduced-motion: reduce) {
+		.wizard-anim-header,
+		.wizard-anim-body,
+		:global(#upload-stepper) {
+			animation: none;
+		}
+	}
+
+	/* 离开动画:点下一步/上一步/进度条时,内容快速向上淡出 */
+	.wizard-content.wizard-leaving .wizard-anim-header,
+	.wizard-content.wizard-leaving .wizard-anim-body {
+		animation: wizardFadeOut 0.22s ease both;
+	}
+	@keyframes wizardFadeOut {
+		from {
+			opacity: 1;
+			transform: translateY(0);
+		}
+		to {
+			opacity: 0;
+			transform: translateY(-12px);
+		}
+	}
+</style>
+
+<script>
+	/**
+	 * 拦截向导内部链接,在导航前给当前内容播一段 220ms 的淡出 ——
+	 * 跟新页面 350ms 的淡入合起来就是「转场」感。
+	 * 注意:只拦截向导内/进度条的 wizard step 链接,其它链接照常。
+	 */
+	const WIZARD_STEPS = ['setup', 'identity', 'voice', 'collection', 'photos', 'publish'];
+	const stepRe = new RegExp(`/upload/(${WIZARD_STEPS.join('|')})/?$`);
+
+	document.addEventListener(
+		'click',
+		(ev) => {
+			const a = (ev.target as HTMLElement | null)?.closest?.('a[href]') as
+				| HTMLAnchorElement
+				| null;
+			if (!a) return;
+			const href = a.getAttribute('href');
+			if (!href || !stepRe.test(href)) return;
+			if (a.classList.contains('pointer-events-none')) return; // 下一步未激活时不动
+			// 普通修饰键放行(让用户用新标签打开)
+			if (
+				ev.metaKey ||
+				ev.ctrlKey ||
+				ev.shiftKey ||
+				ev.altKey ||
+				(ev as MouseEvent).button !== 0
+			)
+				return;
+			const content = document.querySelector('.wizard-content');
+			if (!content) return;
+			ev.preventDefault();
+			content.classList.add('wizard-leaving');
+			window.setTimeout(() => {
+				location.href = href;
+			}, 220);
+		},
+		{ capture: true },
+	);
+</script>
 
 <script>
 	declare global {
