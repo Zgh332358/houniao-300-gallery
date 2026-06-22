@@ -1,0 +1,349 @@
+---
+import WizardLayout from '../../layouts/WizardLayout.astro';
+---
+
+<WizardLayout
+	step="photos"
+	title="选图 + AI 文案"
+	subtitle="把你这次要发的图拖进来。AI 会读图、自动写双语标题/描述/五维标签/策展短评,并做发布前内容审核。你可以和 AI 多轮对话改写文案。"
+>
+	<div x-data="photosPage()" x-init="init()" class="space-y-8">
+		<!-- 拖拽区 -->
+		<section
+			class="border-2 border-dashed rounded-xl p-10 text-center transition-colors"
+			:class="dragOver ? 'border-violet-500 bg-violet-50' : 'border-gray-300 hover:border-gray-400'"
+			@dragover.prevent="dragOver = true"
+			@dragleave.prevent="dragOver = false"
+			@drop.prevent="handleDrop($event)"
+		>
+			<p class="text-gray-700 mb-3">把图片拖到这里 或</p>
+			<label class="inline-block px-5 py-2.5 bg-black text-white rounded cursor-pointer hover:bg-gray-800">
+				选择文件
+				<input
+					type="file"
+					accept="image/*"
+					multiple
+					class="hidden"
+					@change="handleFileInput($event)"
+				/>
+			</label>
+			<p class="text-xs text-gray-500 mt-3">
+				JPG / PNG / WebP · 多选可一次拖多张
+			</p>
+		</section>
+
+		<!-- 列表 -->
+		<section class="space-y-4" x-show="photos.length > 0">
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-semibold">
+					本次发布 <span x-text="photos.length"></span> 张
+				</h2>
+				<p class="text-xs text-gray-500" x-show="anyAnalyzing">
+					⏳ AI 正在读图...
+				</p>
+			</div>
+
+			<template x-for="p in photos" :key="p.id">
+				<div class="border border-gray-200 rounded-lg overflow-hidden bg-white">
+					<div class="flex flex-col sm:flex-row gap-4 p-4">
+						<img
+							:src="p.previewUrl"
+							class="w-full sm:w-40 h-48 sm:h-32 object-cover rounded flex-shrink-0"
+						/>
+						<div class="flex-1 space-y-2 min-w-0">
+							<input
+								type="text"
+								x-model="p.title"
+								@input="p.titleEdited = true; persistPhoto(p)"
+								placeholder="中文标题"
+								class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:border-black"
+							/>
+							<input
+								type="text"
+								x-model="p.titleEn"
+								@input="persistPhoto(p)"
+								placeholder="English title (AI 自动填,可改)"
+								class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded text-gray-600 focus:outline-none focus:border-black"
+							/>
+							<textarea
+								x-model="p.description"
+								@input="p.descEdited = true; persistPhoto(p)"
+								placeholder="中文描述(可选)"
+								rows="2"
+								class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:border-black resize-none"
+							></textarea>
+							<input
+								type="text"
+								x-model="p.descriptionEn"
+								@input="persistPhoto(p)"
+								placeholder="English description (AI 自动填,可改)"
+								class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded text-gray-600 focus:outline-none focus:border-black"
+							/>
+
+							<!-- 状态 + 操作 -->
+							<div class="flex items-center gap-2 text-xs flex-wrap">
+								<span x-show="p.aiStatus === 'idle'" class="text-gray-400">还没分析</span>
+								<span x-show="p.aiStatus === 'analyzing'" class="text-violet-600">
+									✨ AI 读图中...
+								</span>
+								<span x-show="p.aiStatus === 'done' && p.moderation && p.moderation.safe" class="text-green-600">
+									✓ 通过审核
+								</span>
+								<span x-show="p.aiStatus === 'done' && p.moderation && !p.moderation.safe" class="text-red-600">
+									⛔ <span x-text="p.moderation.reason || '未通过'"></span> · 不可发布
+								</span>
+								<span x-show="p.aiStatus === 'error'" class="text-red-600" x-text="`AI 失败: ${p.aiError}`"></span>
+								<button
+									type="button"
+									x-show="p.aiStatus === 'idle' || p.aiStatus === 'error'"
+									@click="analyzeOne(p)"
+									class="px-2 py-1 text-violet-700 underline"
+								>用 AI 读这张</button>
+								<button
+									type="button"
+									@click="p.chatOpen = !p.chatOpen"
+									x-show="p.aiStatus === 'done'"
+									class="px-2 py-1 text-gray-600 hover:text-violet-700 underline"
+									x-text="p.chatOpen ? '收起对话' : '和 AI 聊改文案'"
+								></button>
+								<button
+									type="button"
+									@click="removePhotoLocal(p)"
+									class="ml-auto text-gray-400 hover:text-red-600"
+								>移除</button>
+							</div>
+
+							<!-- 五维标签 -->
+							<div x-show="p.aiStatus === 'done'" class="flex flex-wrap gap-1">
+								<template x-for="(v, k) in p.tags" :key="k">
+									<span x-show="v" class="px-2 py-0.5 text-[10px] bg-violet-50 text-violet-700 rounded-full">
+										<span class="opacity-60" x-text="k + ':'"></span>
+										<span x-text="v"></span>
+									</span>
+								</template>
+							</div>
+							<p x-show="p.curatorNote" class="text-xs italic text-gray-500" x-text="`「${p.curatorNote}」`"></p>
+
+							<!-- 多轮对话 -->
+							<div x-show="p.chatOpen" class="border-t border-gray-100 pt-3 mt-2 space-y-2">
+								<div class="space-y-1.5 max-h-48 overflow-y-auto">
+									<template x-for="(m, i) in p.chatMsgs" :key="i">
+										<div class="text-xs">
+											<span
+												class="font-medium"
+												:class="m.role === 'user' ? 'text-gray-700' : 'text-violet-700'"
+												x-text="m.role === 'user' ? '你:' : 'AI:'"
+											></span>
+											<span class="text-gray-700" x-text="m.text"></span>
+										</div>
+									</template>
+								</div>
+								<div class="flex gap-2">
+									<input
+										type="text"
+										x-model="p.chatInput"
+										@keydown.enter="sendChat(p)"
+										:disabled="p.chatBusy"
+										placeholder="比如「改得更冷峻」「描述短一些」「换个标题」"
+										class="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:border-black"
+									/>
+									<button
+										type="button"
+										@click="sendChat(p)"
+										:disabled="p.chatBusy || !p.chatInput.trim()"
+										class="px-3 py-1.5 text-xs bg-violet-600 text-white rounded hover:bg-violet-700 disabled:bg-gray-300"
+										x-text="p.chatBusy ? '…' : '发送'"
+									></button>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</template>
+		</section>
+
+		<p
+			x-show="photos.length === 0"
+			class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3"
+		>
+			至少加一张图,才能去下一步发布。
+		</p>
+		<p
+			x-show="anyBlocked"
+			class="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3"
+		>
+			⛔ 有作品没通过 AI 审核,移除掉再继续。
+		</p>
+	</div>
+
+	<script>
+		import { analyzePhoto, chatRevise, type AiSuggestion } from '../../lib/ai';
+		import {
+			addPhoto,
+			listPhotos,
+			updatePhoto,
+			removePhoto,
+			gateForStep,
+			stepHref,
+			type WizardPhoto,
+		} from '../../lib/wizard';
+
+		interface PhotoView extends WizardPhoto {
+			previewUrl: string;
+			chatMsgs: { role: 'user' | 'assistant'; text: string }[];
+			chatInput: string;
+			chatBusy: boolean;
+			chatOpen: boolean;
+		}
+
+		function toView(p: WizardPhoto): PhotoView {
+			return {
+				...p,
+				previewUrl: URL.createObjectURL(p.blob),
+				chatMsgs: [],
+				chatInput: '',
+				chatBusy: false,
+				chatOpen: false,
+			};
+		}
+
+		function photosPage() {
+			return {
+				dragOver: false,
+				photos: [] as PhotoView[],
+
+				get anyAnalyzing(): boolean {
+					return this.photos.some((p) => p.aiStatus === 'analyzing');
+				},
+				get anyBlocked(): boolean {
+					return this.photos.some(
+						(p) => p.aiStatus === 'done' && p.moderation && p.moderation.safe === false,
+					);
+				},
+				get ready(): boolean {
+					return this.photos.length > 0 && !this.anyBlocked && !this.anyAnalyzing;
+				},
+
+				async init() {
+					const gate = await gateForStep('photos');
+					if (gate && gate !== 'photos') {
+						const base = (document.documentElement.dataset.base || '/') as string;
+						location.replace(stepHref(base, gate));
+						return;
+					}
+					const list = await listPhotos();
+					this.photos = list.map(toView);
+					this.syncNext();
+					this.$watch('photos', () => this.syncNext(), { deep: true });
+				},
+
+				syncNext() {
+					window.__wizardSetNextEnabled?.(this.ready);
+				},
+
+				/* ---------- 添加 ---------- */
+				async handleFileInput(ev: Event) {
+					const input = ev.target as HTMLInputElement;
+					if (input.files) await this.addFiles(input.files);
+					input.value = '';
+				},
+				async handleDrop(ev: DragEvent) {
+					this.dragOver = false;
+					if (ev.dataTransfer?.files) await this.addFiles(ev.dataTransfer.files);
+				},
+				async addFiles(list: FileList) {
+					for (const f of Array.from(list)) {
+						if (!f.type.startsWith('image/')) continue;
+						const rec = await addPhoto(f);
+						const view = toView(rec);
+						this.photos.push(view);
+						// 自动启动 AI 分析(没异步等,让多张并行)
+						this.analyzeOne(view);
+					}
+				},
+
+				async removePhotoLocal(p: PhotoView) {
+					if (p.previewUrl) URL.revokeObjectURL(p.previewUrl);
+					await removePhoto(p.id);
+					this.photos = this.photos.filter((x) => x.id !== p.id);
+				},
+
+				/* ---------- AI ---------- */
+				async analyzeOne(p: PhotoView) {
+					p.aiStatus = 'analyzing';
+					p.aiError = '';
+					await this.persistPhoto(p);
+					const file = new File([p.blob], p.filename, { type: p.mimeType });
+					const r = await analyzePhoto(file);
+					if (!r.ok) {
+						p.aiStatus = 'error';
+						p.aiError = r.error;
+						await this.persistPhoto(p);
+						return;
+					}
+					if (!p.titleEdited && r.suggestion.title) p.title = r.suggestion.title;
+					if (!p.descEdited && r.suggestion.description) p.description = r.suggestion.description;
+					if (r.suggestion.titleEn) p.titleEn = r.suggestion.titleEn;
+					if (r.suggestion.descriptionEn) p.descriptionEn = r.suggestion.descriptionEn;
+					p.tags = { ...p.tags, ...r.suggestion.tags };
+					p.curatorNote = r.suggestion.curatorNote;
+					p.moderation = r.moderation;
+					p.aiHistory = r.history;
+					p.aiReasoning = r.reasoning;
+					p.aiStatus = 'done';
+					if (r.reply) p.chatMsgs.push({ role: 'assistant', text: r.reply });
+					await this.persistPhoto(p);
+				},
+
+				async sendChat(p: PhotoView) {
+					const text = p.chatInput.trim();
+					if (!text || p.chatBusy) return;
+					p.chatMsgs.push({ role: 'user', text });
+					p.chatInput = '';
+					p.chatBusy = true;
+					const cur: AiSuggestion = {
+						title: p.title,
+						titleEn: p.titleEn,
+						description: p.description,
+						descriptionEn: p.descriptionEn,
+						curatorNote: p.curatorNote,
+						tags: p.tags,
+					};
+					const r = await chatRevise(p.aiHistory as any, text, cur);
+					p.chatBusy = false;
+					if (!r.ok) {
+						p.chatMsgs.push({ role: 'assistant', text: '⚠️ ' + r.error });
+						return;
+					}
+					p.aiHistory = r.history;
+					if (r.reasoning) p.aiReasoning = r.reasoning;
+					if (r.moderation) p.moderation = r.moderation;
+					if (r.suggestion.title) {
+						p.title = r.suggestion.title;
+						p.titleEdited = true;
+					}
+					if (r.suggestion.titleEn) p.titleEn = r.suggestion.titleEn;
+					if (r.suggestion.description) {
+						p.description = r.suggestion.description;
+						p.descEdited = true;
+					}
+					if (r.suggestion.descriptionEn) p.descriptionEn = r.suggestion.descriptionEn;
+					p.tags = { ...p.tags, ...r.suggestion.tags };
+					p.curatorNote = r.suggestion.curatorNote;
+					p.chatMsgs.push({ role: 'assistant', text: r.reply });
+					await this.persistPhoto(p);
+				},
+
+				/* ---------- 持久化:把视图层 patch 写回 IDB ---------- */
+				async persistPhoto(p: PhotoView) {
+					const { previewUrl: _u, chatMsgs: _m, chatInput: _i, chatBusy: _b, chatOpen: _o, ...rest } = p as any;
+					await updatePhoto(p.id, rest);
+				},
+			};
+		}
+		(window as any).photosPage = photosPage;
+		document.addEventListener('alpine:init', () => {
+			(window as any).Alpine?.data('photosPage', photosPage);
+		});
+	</script>
+</WizardLayout>

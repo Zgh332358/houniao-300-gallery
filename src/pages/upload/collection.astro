@@ -1,0 +1,88 @@
+---
+import WizardLayout from '../../layouts/WizardLayout.astro';
+---
+
+<WizardLayout
+	step="collection"
+	title="作品集"
+	subtitle="给你这次要传的这组作品起个名字 — 比如「夜色街拍」、「2026 春季驻地」。一个艺术家可以有多个作品集,本次发布的都会归到同一个集子里。"
+>
+	<div x-data="collectionPage()" x-init="init()" class="space-y-6">
+		<section class="border border-gray-200 rounded-lg p-6 bg-white">
+			<label class="block">
+				<span class="text-sm text-gray-600 block mb-1">作品集名 *</span>
+				<input
+					type="text"
+					x-model="collectionName"
+					@input="recomputeSlug(); persist()"
+					placeholder="作品集名称(如:人像 / 街拍 / 旅行)"
+					class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-black"
+				/>
+				<p class="text-xs text-gray-500 mt-1.5" x-show="collectionSlug">
+					集子地址 <code class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono" x-text="`/${artistSlug}/?coll=${collectionSlug}`"></code>
+				</p>
+			</label>
+		</section>
+
+		<p
+			x-show="!ready"
+			class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3"
+		>
+			填一个集子名,才能去下一步选图。
+		</p>
+	</div>
+
+	<script>
+		import { toSlug, isValidSlug } from '../../lib/photos';
+		import {
+			getIdentity,
+			getCollection,
+			setCollection,
+			gateForStep,
+			stepHref,
+		} from '../../lib/wizard';
+
+		function collectionPage() {
+			return {
+				artistSlug: '',
+				collectionName: '',
+				collectionSlug: '',
+				_lastAutoSlug: '',
+				get ready(): boolean {
+					return this.collectionName.trim().length > 0 && isValidSlug(this.collectionSlug);
+				},
+				async init() {
+					const gate = await gateForStep('collection');
+					if (gate && gate !== 'collection') {
+						const base = (document.documentElement.dataset.base || '/') as string;
+						location.replace(stepHref(base, gate));
+						return;
+					}
+					this.artistSlug = getIdentity().artistSlug;
+					const c = getCollection();
+					this.collectionName = c.name;
+					this.collectionSlug = c.slug;
+					this._lastAutoSlug = c.slug;
+					this.syncNext();
+					this.$watch('ready', () => this.syncNext());
+				},
+				recomputeSlug() {
+					if (!this.collectionSlug || this._lastAutoSlug === this.collectionSlug) {
+						this.collectionSlug = toSlug(this.collectionName);
+						this._lastAutoSlug = this.collectionSlug;
+					}
+				},
+				persist() {
+					setCollection({ name: this.collectionName, slug: this.collectionSlug });
+				},
+				syncNext() {
+					window.__wizardSetNextEnabled?.(this.ready);
+				},
+			};
+		}
+		(window as any).collectionPage = collectionPage;
+		document.addEventListener('alpine:init', () => {
+			(window as any).Alpine?.data('collectionPage', collectionPage);
+		});
+	</script>
+</WizardLayout>

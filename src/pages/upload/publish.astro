@@ -1,0 +1,304 @@
+---
+import WizardLayout from '../../layouts/WizardLayout.astro';
+---
+
+<WizardLayout
+	step="publish"
+	title="发布"
+	subtitle="检查无误后点「发布」。系统会一张张:把图传到 Supabase Storage、写元数据、用你的克隆音色合成解说 mp3、写回数据库。"
+>
+	<div x-data="publishPage()" x-init="init()" class="space-y-6">
+		<!-- 汇总 -->
+		<section class="border border-gray-200 rounded-lg p-6 bg-white space-y-3">
+			<h2 class="font-semibold">就要发布的内容</h2>
+			<dl class="text-sm space-y-1.5">
+				<div class="flex justify-between">
+					<dt class="text-gray-500">艺术家</dt>
+					<dd class="font-medium" x-text="artistName"></dd>
+				</div>
+				<div class="flex justify-between">
+					<dt class="text-gray-500">页面</dt>
+					<dd>
+						<code class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono text-xs" x-text="`/${artistSlug}/`"></code>
+					</dd>
+				</div>
+				<div class="flex justify-between">
+					<dt class="text-gray-500">作品集</dt>
+					<dd class="font-medium" x-text="collectionName"></dd>
+				</div>
+				<div class="flex justify-between">
+					<dt class="text-gray-500">声音</dt>
+					<dd class="font-mono text-xs text-gray-500" x-text="voiceId || '(未登记)'"></dd>
+				</div>
+				<div class="flex justify-between">
+					<dt class="text-gray-500">作品数</dt>
+					<dd class="font-medium" x-text="`${photos.length} 张`"></dd>
+				</div>
+			</dl>
+		</section>
+
+		<!-- 缩略图墙 -->
+		<section class="grid grid-cols-3 sm:grid-cols-4 gap-2" x-show="photos.length > 0">
+			<template x-for="p in photos" :key="p.id">
+				<div class="relative aspect-square overflow-hidden rounded">
+					<img :src="p.previewUrl" class="w-full h-full object-cover" />
+					<div
+						class="absolute inset-0 flex items-center justify-center text-white text-xs font-medium"
+						:class="p.publishStatus === 'pending' ? 'bg-black/40' : (p.publishStatus === 'uploading' ? 'bg-violet-600/70' : (p.publishStatus === 'narrating' ? 'bg-violet-700/80' : (p.publishStatus === 'done' ? 'bg-green-600/60' : (p.publishStatus === 'error' ? 'bg-red-600/70' : 'bg-transparent'))))"
+						x-show="p.publishStatus !== 'idle'"
+					>
+						<span x-show="p.publishStatus === 'pending'">排队</span>
+						<span x-show="p.publishStatus === 'uploading'" x-text="`传 ${p.uploadPct}%`"></span>
+						<span x-show="p.publishStatus === 'narrating'">🎙️ 解说</span>
+						<span x-show="p.publishStatus === 'done'">✓</span>
+						<span x-show="p.publishStatus === 'error'">!</span>
+					</div>
+				</div>
+			</template>
+		</section>
+
+		<!-- 发布按钮 + 进度 -->
+		<section class="border border-gray-200 rounded-lg p-6 bg-white space-y-4">
+			<div class="flex items-center justify-between flex-wrap gap-3">
+				<button
+					type="button"
+					@click="startPublish()"
+					:disabled="publishing || allDone"
+					class="px-6 py-3 bg-black text-white rounded font-medium hover:bg-violet-600 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+				>
+					<span x-show="!publishing && !allDone">▶ 开始发布</span>
+					<span x-show="publishing">发布中...</span>
+					<span x-show="allDone">✓ 已全部发布</span>
+				</button>
+				<p class="text-xs text-gray-500" x-show="publishing">
+					本步会调一次 Step API 生成解说词 + 一次 step-tts-2 合成 mp3 · 用你自己的 Key 跑
+				</p>
+			</div>
+
+			<p x-show="globalError" class="text-sm text-red-600" x-text="globalError"></p>
+
+			<!-- 完成后的分享卡片 -->
+			<div
+				x-show="allDone"
+				class="p-4 bg-violet-50 border border-violet-200 rounded-lg space-y-3"
+			>
+				<p class="text-sm text-violet-900">
+					🎉 你的作品页就在这里 ——
+				</p>
+				<div class="flex items-center gap-2">
+					<input
+						type="text"
+						readonly
+						:value="artistFullUrl"
+						@click="$event.target.select()"
+						class="flex-1 px-3 py-2 bg-white border border-violet-200 rounded font-mono text-xs text-gray-700 select-all"
+					/>
+					<button
+						type="button"
+						@click="copyArtistUrl()"
+						class="px-3 py-2 bg-violet-600 text-white rounded text-xs font-medium hover:bg-violet-700 whitespace-nowrap"
+						x-text="copied ? '✓ 已复制' : '复制链接'"
+					></button>
+				</div>
+				<div class="flex flex-wrap gap-2 pt-2">
+					<a
+						:href="artistHref"
+						target="_blank"
+						class="px-4 py-2 text-sm bg-black text-white rounded hover:bg-violet-600"
+					>打开我的页面 →</a>
+					<button
+						type="button"
+						@click="goAddMore()"
+						class="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50"
+					>再传一组(回到选图)</button>
+				</div>
+				<p class="text-xs text-violet-700 pt-1">
+					把链接发给朋友、放小红书简介 — 任何人打开都能听 AI 用你的声音讲你的每一张画。
+				</p>
+			</div>
+		</section>
+	</div>
+
+	<script>
+		import { uploadPhoto, uploadNarrationMp3, setNarration } from '../../lib/photos';
+		import { generateNarrationText } from '../../lib/ai';
+		import { synthesizeSpeech } from '../../lib/ai-voice';
+		import {
+			getIdentity,
+			getCollection,
+			getVoiceForSlug,
+			listPhotos,
+			updatePhoto,
+			removePhoto,
+			clearAllPhotos,
+			gateForStep,
+			stepHref,
+			type WizardPhoto,
+		} from '../../lib/wizard';
+
+		interface PhotoView extends WizardPhoto {
+			previewUrl: string;
+			publishStatus: 'idle' | 'pending' | 'uploading' | 'narrating' | 'done' | 'error';
+			uploadPct: number;
+			publishError: string;
+		}
+
+		function publishPage() {
+			return {
+				artistName: '',
+				artistSlug: '',
+				artistContact: '',
+				collectionName: '',
+				collectionSlug: '',
+				voiceId: '',
+				photos: [] as PhotoView[],
+				publishing: false,
+				globalError: '',
+				copied: false,
+				base: '/',
+
+				get allDone(): boolean {
+					return this.photos.length > 0 && this.photos.every((p) => p.publishStatus === 'done');
+				},
+				get artistHref(): string {
+					return `${this.base}/${this.artistSlug}/`;
+				},
+				get artistFullUrl(): string {
+					if (typeof location === 'undefined' || !this.artistSlug) return '';
+					return `${location.origin}${this.base}/${this.artistSlug}/`;
+				},
+
+				async init() {
+					const gate = await gateForStep('publish');
+					if (gate && gate !== 'publish') {
+						const base = (document.documentElement.dataset.base || '/') as string;
+						location.replace(stepHref(base, gate));
+						return;
+					}
+					this.base = (document.documentElement.dataset.base || '/').replace(/\/+$/, '');
+					const id = getIdentity();
+					this.artistName = id.artistName;
+					this.artistSlug = id.artistSlug;
+					this.artistContact = id.artistContact;
+					const c = getCollection();
+					this.collectionName = c.name;
+					this.collectionSlug = c.slug;
+					const v = getVoiceForSlug(this.artistSlug);
+					this.voiceId = v?.voiceId || '';
+
+					const list = await listPhotos();
+					this.photos = list.map((p) => ({
+						...p,
+						previewUrl: URL.createObjectURL(p.blob),
+						publishStatus: 'idle' as const,
+						uploadPct: 0,
+						publishError: '',
+					}));
+
+					// 最后一步通常底部 next 按钮没意义,disable 它
+					window.__wizardSetNextEnabled?.(false);
+				},
+
+				async startPublish() {
+					if (this.publishing) return;
+					if (!this.voiceId) {
+						this.globalError = '没找到你登记的声音 — 回到「你的声音」重做一次';
+						return;
+					}
+					this.publishing = true;
+					this.globalError = '';
+					for (const p of this.photos) p.publishStatus = 'pending';
+
+					for (const p of this.photos) {
+						try {
+							await this.publishOne(p);
+						} catch (e: any) {
+							p.publishStatus = 'error';
+							p.publishError = e?.message || String(e);
+						}
+					}
+					this.publishing = false;
+
+					// 全发完了:清掉 IDB 里的图,但 voice/identity 保留
+					if (this.allDone) {
+						await clearAllPhotos();
+					}
+				},
+
+				async publishOne(p: PhotoView) {
+					p.publishStatus = 'uploading';
+					p.uploadPct = 0;
+					const file = new File([p.blob], p.filename, { type: p.mimeType });
+					const entry = await uploadPhoto(file, {
+						artistSlug: this.artistSlug,
+						collectionSlug: this.collectionSlug,
+						meta: {
+							artistName: this.artistName,
+							collectionName: this.collectionName,
+							title: p.title,
+							titleEn: p.titleEn || undefined,
+							description: p.description,
+							descriptionEn: p.descriptionEn || undefined,
+						},
+						contact: this.artistContact,
+						width: p.width,
+						height: p.height,
+						onProgress: (pct) => {
+							p.uploadPct = pct;
+						},
+					});
+					p.uploadPct = 100;
+
+					// 解说生成 + 合成
+					p.publishStatus = 'narrating';
+					const nr = await generateNarrationText(file, {
+						title: p.title,
+						description: p.description,
+						tags: p.tags,
+						curatorNote: p.curatorNote,
+					});
+					if (!nr.ok) {
+						p.publishError = `解说词失败: ${nr.error} (图片仍发布成功)`;
+						p.publishStatus = 'done';
+						await removePhoto(p.id);
+						return;
+					}
+					const sr = await synthesizeSpeech({
+						voiceId: this.voiceId,
+						text: nr.text,
+						style: 'narration',
+					});
+					if (!sr.ok) {
+						p.publishError = `合成失败: ${sr.error} (图片仍发布成功)`;
+						p.publishStatus = 'done';
+						await removePhoto(p.id);
+						return;
+					}
+					const path = await uploadNarrationMp3(sr.audio, this.artistSlug, entry.id);
+					await setNarration(entry.id, nr.text, path);
+					p.publishStatus = 'done';
+					await removePhoto(p.id);
+				},
+
+				async copyArtistUrl() {
+					if (!this.artistFullUrl) return;
+					try {
+						await navigator.clipboard.writeText(this.artistFullUrl);
+						this.copied = true;
+						setTimeout(() => {
+							this.copied = false;
+						}, 1800);
+					} catch {}
+				},
+
+				goAddMore() {
+					location.href = stepHref(this.base, 'photos');
+				},
+			};
+		}
+		(window as any).publishPage = publishPage;
+		document.addEventListener('alpine:init', () => {
+			(window as any).Alpine?.data('publishPage', publishPage);
+		});
+	</script>
+</WizardLayout>

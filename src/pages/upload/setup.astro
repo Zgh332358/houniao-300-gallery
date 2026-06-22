@@ -1,0 +1,119 @@
+---
+import WizardLayout from '../../layouts/WizardLayout.astro';
+---
+
+<WizardLayout
+	step="setup"
+	title="AI 作品助手设置"
+	subtitle="填入你自己的 StepFun API Key — 之后所有 AI 能力都用它跑。Key 只存你本机浏览器,不会传去任何服务器。"
+>
+	<div x-data="setupPage()" x-init="init()" class="space-y-6">
+		<section class="border border-gray-200 rounded-lg p-6 bg-white">
+			<div class="flex items-center gap-2 mb-3">
+				<span class="text-2xl">🔑</span>
+				<h2 class="text-xl font-semibold">Step API Key</h2>
+				<span
+					x-show="aiOn"
+					class="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-700"
+				>已就绪</span>
+			</div>
+
+			<label class="block">
+				<span class="text-sm text-gray-600 block mb-1">API Key *</span>
+				<div class="flex gap-2">
+					<input
+						:type="showKey ? 'text' : 'password'"
+						x-model="apiKey"
+						@input="persist()"
+						placeholder="粘贴 sk-... 或一长串字符"
+						autocomplete="off"
+						class="flex-1 px-3 py-2 border border-gray-300 rounded font-mono text-sm focus:outline-none focus:border-violet-500"
+					/>
+					<button
+						type="button"
+						@click="showKey = !showKey"
+						class="px-3 py-2 border border-gray-300 rounded text-sm text-gray-500 hover:text-gray-800"
+						x-text="showKey ? '隐藏' : '显示'"
+					></button>
+				</div>
+			</label>
+
+			<p class="text-xs text-gray-500 mt-2">
+				没有 Key?去
+				<a
+					href="https://platform.stepfun.com/"
+					target="_blank"
+					rel="noopener"
+					class="underline hover:text-violet-700">StepFun 开放平台</a
+				> 几分钟领一个。
+			</p>
+		</section>
+
+		<section class="border border-gray-200 rounded-lg p-6 bg-white">
+			<h2 class="text-base font-semibold mb-3 text-gray-700">使用的模型</h2>
+			<dl class="space-y-3 text-sm">
+				<div class="flex justify-between items-center">
+					<dt class="text-gray-500">多模态(读图 + 文案 + 对话 + 审核 + 检索)</dt>
+					<dd>
+						<input
+							type="text"
+							x-model="model"
+							@input="persist()"
+							placeholder="step-3.7-flash"
+							class="px-2 py-1 border border-gray-300 rounded font-mono text-xs focus:outline-none focus:border-violet-500"
+						/>
+					</dd>
+				</div>
+				<div class="flex justify-between items-center">
+					<dt class="text-gray-500">语音克隆 + 合成(写死)</dt>
+					<dd class="px-2 py-1 bg-gray-100 rounded font-mono text-xs text-gray-700">
+						step-tts-2
+					</dd>
+				</div>
+			</dl>
+			<p class="text-xs text-gray-400 mt-3">
+				多模态模型可改成其它支持图像理解的模型 · 语音模型固定为 step-tts-2(克隆 + 合成都用它)
+			</p>
+		</section>
+
+		<p
+			x-show="!aiOn"
+			class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3"
+		>
+			填好 Key 才能点击底部「下一步」继续。
+		</p>
+	</div>
+
+	<script>
+		import { getAiConfig, setAiConfig, hasAiKey, DEFAULT_MODEL } from '../../lib/ai';
+
+		function setupPage() {
+			return {
+				apiKey: '',
+				model: DEFAULT_MODEL,
+				showKey: false,
+				get aiOn(): boolean {
+					return this.apiKey.trim().length > 0;
+				},
+				init() {
+					const c = getAiConfig();
+					this.apiKey = c.apiKey;
+					this.model = c.model;
+					this.syncNext();
+					this.$watch('apiKey', () => this.syncNext());
+				},
+				persist() {
+					setAiConfig({ apiKey: this.apiKey, model: this.model });
+					this.syncNext();
+				},
+				syncNext() {
+					window.__wizardSetNextEnabled?.(hasAiKey());
+				},
+			};
+		}
+		(window as any).setupPage = setupPage;
+		document.addEventListener('alpine:init', () => {
+			(window as any).Alpine?.data('setupPage', setupPage);
+		});
+	</script>
+</WizardLayout>

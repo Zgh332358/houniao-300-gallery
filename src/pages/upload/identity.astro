@@ -1,0 +1,98 @@
+---
+import WizardLayout from '../../layouts/WizardLayout.astro';
+---
+
+<WizardLayout
+	step="identity"
+	title="你是谁"
+	subtitle="一个名字 + 联系方式。联系方式只给运营 — 不会出现在你的作品页上。"
+>
+	<div x-data="identityPage()" x-init="init()" class="space-y-6">
+		<section class="border border-gray-200 rounded-lg p-6 bg-white space-y-5">
+			<label class="block">
+				<span class="text-sm text-gray-600 block mb-1">显示名 *</span>
+				<input
+					type="text"
+					x-model="artistName"
+					@input="recomputeSlug(); persist()"
+					placeholder="你的名字 / 笔名"
+					class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-black"
+				/>
+				<p class="text-xs text-gray-500 mt-1.5" x-show="artistSlug">
+					你的页面地址将是 <code class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono" x-text="`/${artistSlug}/`"></code>
+				</p>
+			</label>
+
+			<label class="block">
+				<span class="text-sm text-gray-600 block mb-1">联系方式 *</span>
+				<input
+					type="text"
+					x-model="artistContact"
+					@input="persist()"
+					placeholder="email@example.com 或 @your_ig 或 https://..."
+					class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-black"
+				/>
+				<p class="text-xs text-gray-500 mt-1">
+					🔒 仅供运营私下回联,不会公开展示在你的作品页上
+				</p>
+			</label>
+		</section>
+
+		<p
+			x-show="!ready"
+			class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3"
+		>
+			显示名和联系方式都填了才能继续。
+		</p>
+	</div>
+
+	<script>
+		import { toSlug, isValidSlug } from '../../lib/photos';
+		import { getIdentity, setIdentity } from '../../lib/wizard';
+
+		function identityPage() {
+			return {
+				artistName: '',
+				artistSlug: '',
+				artistContact: '',
+				_lastAutoSlug: '',
+				get ready(): boolean {
+					return (
+						this.artistName.trim().length > 0 &&
+						isValidSlug(this.artistSlug) &&
+						this.artistContact.trim().length > 0
+					);
+				},
+				init() {
+					const id = getIdentity();
+					this.artistName = id.artistName;
+					this.artistSlug = id.artistSlug;
+					this.artistContact = id.artistContact;
+					this._lastAutoSlug = id.artistSlug;
+					this.syncNext();
+					this.$watch('ready', () => this.syncNext());
+				},
+				recomputeSlug() {
+					if (!this.artistSlug || this._lastAutoSlug === this.artistSlug) {
+						this.artistSlug = toSlug(this.artistName);
+						this._lastAutoSlug = this.artistSlug;
+					}
+				},
+				persist() {
+					setIdentity({
+						artistName: this.artistName,
+						artistSlug: this.artistSlug,
+						artistContact: this.artistContact,
+					});
+				},
+				syncNext() {
+					window.__wizardSetNextEnabled?.(this.ready);
+				},
+			};
+		}
+		(window as any).identityPage = identityPage;
+		document.addEventListener('alpine:init', () => {
+			(window as any).Alpine?.data('identityPage', identityPage);
+		});
+	</script>
+</WizardLayout>
