@@ -4,7 +4,7 @@
  * 复用 ai.ts 的 localStorage Key 凭证(同一个 StepFun 账号同时支持
  * chat 与 audio 端点)。CORS 已在 D 启动前验证为开放,见 commit message。
  *
- *   浏览器 ──(用户自己的 key)──▶ https://api.stepfun.com/v1/{files,audio/voices,audio/speech}
+ *   浏览器 ──(用户自己的 key)──▶ https://api.stepfun.com/step_plan/v1/{files,audio/voices,audio/speech}
  *
  * 三段式流程(对齐 Spec §5 P0):
  *   A. 音色登记: uploadVoiceSample → cloneVoice → 拿 voice_id 与试听音频
@@ -19,7 +19,7 @@
 
 import { getAiConfig } from './ai';
 
-const STEP_BASE_URL = 'https://api.stepfun.com/v1';
+const STEP_BASE_URL = 'https://api.stepfun.com/step_plan/v1';
 
 /** 复刻与合成都用 stepaudio-2.5-tts */
 export const VOICE_MODEL = 'stepaudio-2.5-tts';
