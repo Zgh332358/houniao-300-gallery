@@ -104,33 +104,34 @@ const VOICE_PROMPT = '如果你听到我的声音,说明你正在看我的作品
 			x-show="voiceState === 'previewing'"
 			class="border border-violet-200 rounded-lg p-6 bg-violet-50/40 space-y-3"
 		>
-			<template x-if="voiceSampleUrl">
-				<div class="space-y-3">
-					<p class="font-medium">已生成你的克隆音色试听 ——</p>
-					<audio :src="voiceSampleUrl" controls class="w-full"></audio>
-					<p class="text-xs text-gray-600">听一下像不像你?不像就重录,像就「就用它」。</p>
-				</div>
-			</template>
-			<template x-if="!voiceSampleUrl">
-				<div class="space-y-2">
-					<p class="font-medium">✓ 音色已克隆</p>
-					<p class="text-xs text-gray-600">
-						当前模型(stepaudio-2.5-tts)不返回试听音频 — 但 voice_id 已经
-						拿到,在「⑥ 发布」时会用你这段录音克隆出来的声音念解说词。
-						这时再听效果。不放心可以重录。
-					</p>
-				</div>
-			</template>
+			<div x-show="voiceSampleUrl" class="space-y-3">
+				<p class="font-medium">已生成你的克隆音色试听 ——</p>
+				<audio :src="voiceSampleUrl" controls class="w-full"></audio>
+				<p class="text-xs text-gray-600">听一下像不像你?不像就重录,像就「就用它」。</p>
+			</div>
+			<div x-show="!voiceSampleUrl" class="space-y-2">
+				<p class="font-medium">✓ 音色已克隆</p>
+				<p class="text-xs text-gray-600">
+					当前模型(stepaudio-2.5-tts)不返回试听音频 — 但 voice_id 已经
+					拿到,在「⑥ 发布」时会用你这段录音克隆出来的声音念解说词。
+					这时再听效果。不放心可以重录。
+				</p>
+			</div>
 			<div class="flex gap-2 pt-1">
 				<button
 					type="button"
 					@click="confirmVoice()"
-					class="px-5 py-2.5 bg-violet-600 text-white rounded font-medium hover:bg-violet-700"
-				>✓ 就用它</button>
+					:disabled="confirming"
+					class="px-5 py-2.5 bg-violet-600 text-white rounded font-medium hover:bg-violet-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+				>
+					<span x-show="!confirming">✓ 就用它</span>
+					<span x-show="confirming">保存中...</span>
+				</button>
 				<button
 					type="button"
 					@click="resetVoice()"
-					class="px-5 py-2.5 border border-gray-300 rounded text-sm hover:bg-gray-50"
+					:disabled="confirming"
+					class="px-5 py-2.5 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
 				>重录</button>
 			</div>
 		</section>
@@ -193,6 +194,7 @@ const VOICE_PROMPT = '如果你听到我的声音,说明你正在看我的作品
 				voiceSamplePath: '',
 				voiceSampleUrl: '',
 				voiceError: '',
+				confirming: false,
 				recording: false,
 				recordSecs: 0,
 				_mediaRecorder: null as MediaRecorder | null,
@@ -383,29 +385,57 @@ const VOICE_PROMPT = '如果你听到我的声音,说明你正在看我的作品
 				},
 
 				async confirmVoice() {
-					if (this.voiceState !== 'previewing' || !this.voiceFile) return;
+					if (this.voiceState !== 'previewing' || !this.voiceFile) {
+						console.warn('[confirmVoice] 状态异常, 直接返回', {
+							voiceState: this.voiceState,
+							hasFile: !!this.voiceFile,
+						});
+						return;
+					}
+					if (this.confirming) return;
+					this.confirming = true;
+					this.voiceError = '';
 					try {
 						const ext = (this.voiceFile.name.split('.').pop() || 'wav')
 							.toLowerCase()
 							.replace(/[^a-z0-9]/g, '');
-						const samplePath = await uploadVoiceSampleToBucket(
-							this.artistSlug,
-							this.voiceFile,
-							ext,
-						);
+						// 1) 上传音色样本到 audio bucket(锦上添花,失败不阻断 ——
+						//    Supabase 没跑迁移 / audio bucket 不存在 时本步会 404,
+						//    但 voice_id 已经在 StepFun 拿到,本地缓存就够走流程)
+						let samplePath = '';
+						try {
+							samplePath = await uploadVoiceSampleToBucket(
+								this.artistSlug,
+								this.voiceFile,
+								ext,
+							);
+						} catch (e: any) {
+							console.warn('[confirmVoice] 音色样本上传 audio bucket 失败,降级:', e);
+							samplePath = `local-only/${this.artistSlug}.${ext}`;
+						}
 						this.voiceSamplePath = samplePath;
-						await upsertArtist({
-							slug: this.artistSlug,
-							name: this.artistName.trim(),
-							contact: this.artistContact.trim(),
-						});
+						// 2) artists 表写入(可能因 migration 没跑而失败,同样降级)
+						try {
+							await upsertArtist({
+								slug: this.artistSlug,
+								name: this.artistName.trim(),
+								contact: this.artistContact.trim(),
+							});
+						} catch (e: any) {
+							console.warn('[confirmVoice] upsertArtist 失败,只保留本地:', e);
+						}
 						const consentedAt = new Date().toISOString();
-						await setArtistVoice({
-							slug: this.artistSlug,
-							voiceId: this.voiceId,
-							voiceSamplePath: samplePath,
-							consentedAt,
-						});
+						try {
+							await setArtistVoice({
+								slug: this.artistSlug,
+								voiceId: this.voiceId,
+								voiceSamplePath: samplePath,
+								consentedAt,
+							});
+						} catch (e: any) {
+							console.warn('[confirmVoice] setArtistVoice 失败,只保留本地:', e);
+						}
+						// 3) localStorage 必须成功 —— 这才是向导后续步骤认 voice 的地方
 						saveVoiceForSlug(this.artistSlug, {
 							voiceId: this.voiceId,
 							voiceSamplePath: samplePath,
@@ -413,8 +443,12 @@ const VOICE_PROMPT = '如果你听到我的声音,说明你正在看我的作品
 						});
 						this.voiceState = 'done';
 					} catch (e: any) {
+						// 走到这里说明 localStorage 都挂了(隐私窗口/存储满)
+						console.error('[confirmVoice] 致命失败:', e);
 						this.voiceState = 'error';
 						this.voiceError = `保存失败: ${e?.message || String(e)}`;
+					} finally {
+						this.confirming = false;
 					}
 				},
 
