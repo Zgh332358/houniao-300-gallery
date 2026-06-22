@@ -117,12 +117,115 @@ import MainLayout from '../layouts/MainLayout.astro';
 								placeholder="email@example.com 或 @your_ig 或 https://..."
 								class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-black"
 							/>
-							<p class="text-xs text-gray-500 mt-1">将公开展示在你的页面上，方便他人联系</p>
+							<p class="text-xs text-gray-500 mt-1">仅供运营私下回联,不会公开展示在你的作品页上</p>
 						</div>
 					</div>
 				</section>
 
-				<!-- STEP 2: 作品集 -->
+				<!-- STEP 1.5: 你的声音(可选,但启用后才有 AI 解说音频) -->
+				<section
+					class="border rounded-lg p-6"
+					:class="(step1Done ? '' : 'opacity-60 ') + (voiceState === 'done' ? 'border-violet-200 bg-violet-50/40' : 'border-gray-200')"
+				>
+					<div class="flex items-center justify-between mb-1">
+						<div class="flex items-center gap-2">
+							<span class="text-lg">🎙️</span>
+							<h2 class="text-xl font-semibold">你的声音</h2>
+							<span
+								x-show="voiceState === 'done'"
+								class="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-700"
+							>已登记</span>
+							<span
+								x-show="voiceState !== 'done'"
+								class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"
+							>可选</span>
+						</div>
+					</div>
+					<p class="text-xs text-gray-500 mb-4">
+						上传一段 <strong>5~10 秒</strong>的纯人声(mp3 / wav / m4a),
+						AI 用它克隆你的音色,发布作品时<strong>自动生成你声音的语音解说</strong>。
+						不上传也能发作品,但访客就听不到「艺术家亲口讲这幅画」了。
+					</p>
+
+					<!-- A: 选样本 -->
+					<div x-show="voiceState === 'idle' || voiceState === 'recorded' || voiceState === 'error'" class="space-y-3">
+						<label class="block">
+							<input
+								type="file"
+								accept="audio/mpeg,audio/wav,audio/mp4,audio/x-m4a,audio/*"
+								@change="onVoiceFilePicked($event)"
+								class="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:bg-violet-50 file:text-violet-700 file:cursor-pointer hover:file:bg-violet-100"
+							/>
+						</label>
+
+						<div x-show="voiceFileUrl" class="space-y-2">
+							<audio :src="voiceFileUrl" controls class="w-full"></audio>
+							<p class="text-xs text-gray-500">
+								<span x-text="voiceFileName"></span> · <span x-text="voiceFileDuration"></span>
+							</p>
+						</div>
+
+						<label class="flex items-start gap-2 text-sm text-gray-700 select-none cursor-pointer">
+							<input type="checkbox" x-model="voiceConsent" class="mt-1" />
+							<span>
+								我授权该平台使用这段录音克隆<strong>我本人</strong>的声音,仅用于本平台为我的作品生成 AI 解说语音。
+							</span>
+						</label>
+
+						<button
+							type="button"
+							:disabled="!canRegisterVoice"
+							@click="registerVoice()"
+							class="px-4 py-2 bg-violet-600 text-white rounded text-sm font-medium hover:bg-violet-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+						>登记我的音色</button>
+
+						<p x-show="voiceError" class="text-sm text-red-600" x-text="voiceError"></p>
+
+						<template x-if="voiceState === 'idle' && !aiOn">
+							<p class="text-xs text-amber-700">
+								需要先在上方「AI 作品助手」填好 Step API Key 才能调用音色复刻。
+							</p>
+						</template>
+					</div>
+
+					<!-- B: 复刻中 -->
+					<div x-show="voiceState === 'registering'" class="text-sm text-violet-700">
+						正在复刻你的音色...通常 5~15 秒。
+					</div>
+
+					<!-- C: 试听确认 -->
+					<div x-show="voiceState === 'previewing'" class="space-y-3">
+						<p class="text-sm">
+							已生成你的克隆音色试听。听一下像不像你 ——
+						</p>
+						<audio :src="voiceSampleUrl" controls class="w-full"></audio>
+						<div class="flex gap-2">
+							<button
+								type="button"
+								@click="confirmVoice()"
+								class="px-4 py-2 bg-violet-600 text-white rounded text-sm font-medium hover:bg-violet-700"
+							>就用它</button>
+							<button
+								type="button"
+								@click="resetVoice()"
+								class="px-4 py-2 border border-gray-300 rounded text-sm hover:bg-gray-50"
+							>重录 / 重传</button>
+						</div>
+					</div>
+
+					<!-- D: 已登记 -->
+					<div x-show="voiceState === 'done'" class="space-y-2">
+						<p class="text-sm text-violet-800">
+							✅ 已登记你的克隆音色。发布作品时,AI 会用这个声音念解说词。
+						</p>
+						<p class="text-xs text-gray-500 font-mono break-all">voice_id: <span x-text="voiceId"></span></p>
+						<button
+							type="button"
+							@click="resetVoice()"
+							class="text-xs text-gray-500 underline hover:text-gray-800"
+						>换一段录音重做</button>
+					</div>
+				</section>
 				<section
 					class="border border-gray-200 rounded-lg p-6"
 					:class="step1Done ? '' : 'opacity-60'"
@@ -359,7 +462,13 @@ import MainLayout from '../layouts/MainLayout.astro';
 											<span x-show="f.status === 'uploading'" class="text-blue-600">
 												上传中 <span x-text="f.progress + '%'"></span>
 											</span>
-											<span x-show="f.status === 'done'" class="text-green-600">✓ 已上传</span>
+											<span x-show="f.status === 'narrating'" class="text-violet-600">
+												🎙️ 生成 AI 解说...
+											</span>
+											<span x-show="f.status === 'done' && f.narrationPath" class="text-violet-700">
+												✓ 已上传 · 含语音解说
+											</span>
+											<span x-show="f.status === 'done' && !f.narrationPath" class="text-green-600">✓ 已上传</span>
 											<span x-show="f.status === 'error'" class="text-red-600" x-text="f.error"></span>
 											<button
 												x-show="f.status === 'idle' || f.status === 'error'"
@@ -415,15 +524,29 @@ import MainLayout from '../layouts/MainLayout.astro';
 		uploadPhoto,
 		type PhotoEntry,
 		type PhotoMeta,
+		uploadNarrationMp3,
+		setNarration,
 	} from '../lib/photos';
 	import {
 		analyzePhoto,
 		chatRevise,
+		generateNarrationText,
 		getAiConfig,
 		setAiConfig,
 		type AiSuggestion,
 		type Moderation,
 	} from '../lib/ai';
+	import {
+		uploadVoiceSample,
+		cloneVoice,
+		synthesizeSpeech,
+		base64ToBlob,
+	} from '../lib/ai-voice';
+	import {
+		upsertArtist,
+		setArtistVoice,
+		uploadVoiceSample as uploadVoiceSampleToBucket,
+	} from '../lib/artists';
 
 	interface AiState {
 		status: 'hidden' | 'loading' | 'done' | 'error';
@@ -451,12 +574,16 @@ import MainLayout from '../layouts/MainLayout.astro';
 		titleEdited: boolean;
 		descEdited: boolean;
 		size: number;
-		status: 'idle' | 'uploading' | 'done' | 'error';
+		status: 'idle' | 'uploading' | 'narrating' | 'done' | 'error';
 		progress: number;
 		error: string;
 		ai: AiState;
 		moderation: Moderation | null;
 		chat: ChatState;
+		/** M3: 已上传后,本次会话生成的解说文本(供 UI 复读) */
+		narrationText?: string;
+		/** M3: 解说音频在 audio bucket 的路径 */
+		narrationPath?: string;
 	}
 
 	const STORAGE_KEY = 'pf:identity:v1';
@@ -483,6 +610,18 @@ import MainLayout from '../layouts/MainLayout.astro';
 			showKey: false,
 			aiSettingsOpen: false,
 
+			// 🎙️ 声音登记 (M3)
+			voiceState: 'idle' as 'idle' | 'recorded' | 'registering' | 'previewing' | 'done' | 'error',
+			voiceFile: null as File | null,
+			voiceFileUrl: '' as string,
+			voiceFileName: '' as string,
+			voiceFileDuration: '' as string,
+			voiceConsent: false,
+			voiceId: '' as string,
+			voiceSamplePath: '' as string,
+			voiceSampleUrl: '' as string,
+			voiceError: '' as string,
+
 			init() {
 				try {
 					const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
@@ -500,12 +639,16 @@ import MainLayout from '../layouts/MainLayout.astro';
 						this._lastAutoCollSlug = this.collectionSlug;
 					}
 				} catch {}
+				// 把这个 slug 之前登记过的音色还原回来
+				this.restoreVoiceForCurrentSlug();
 			},
 
 			recomputeSlug() {
 				if (!this.artistSlug || this._lastAutoSlug === this.artistSlug) {
 					this.artistSlug = toSlug(this.artistName);
 					this._lastAutoSlug = this.artistSlug;
+					// slug 变了,重新看看新 slug 是否已经登记过音色
+					this.restoreVoiceForCurrentSlug();
 				}
 			},
 			recomputeCollSlug() {
@@ -610,6 +753,180 @@ import MainLayout from '../layouts/MainLayout.astro';
 			onKeyCommitted() {
 				this.persistAi();
 				if (this.aiOn) this.analyzeAllPending();
+			},
+
+			/* ---------- 声音登记 (M3) ---------- */
+
+			get canRegisterVoice() {
+				return (
+					this.voiceState !== 'registering' &&
+					this.voiceState !== 'previewing' &&
+					this.voiceState !== 'done' &&
+					!!this.voiceFile &&
+					this.voiceConsent &&
+					this.aiOn
+				);
+			},
+
+			onVoiceFilePicked(ev: Event) {
+				this.voiceError = '';
+				const input = ev.target as HTMLInputElement;
+				const f = input.files?.[0];
+				if (!f) return;
+				if (!f.type.startsWith('audio/')) {
+					this.voiceError = '需要音频文件 (mp3 / wav / m4a)';
+					return;
+				}
+				if (this.voiceFileUrl) URL.revokeObjectURL(this.voiceFileUrl);
+				this.voiceFile = f;
+				this.voiceFileUrl = URL.createObjectURL(f);
+				this.voiceFileName = f.name;
+				this.voiceFileDuration = '...';
+				this.voiceState = 'recorded';
+				// 试探读时长(用一个临时 audio 元素)
+				const probe = new Audio(this.voiceFileUrl);
+				probe.addEventListener('loadedmetadata', () => {
+					const sec = probe.duration;
+					this.voiceFileDuration = isFinite(sec) ? `${sec.toFixed(1)} 秒` : '时长未知';
+					if (isFinite(sec) && (sec < 3 || sec > 15)) {
+						this.voiceError = `建议 5~10 秒;当前 ${sec.toFixed(1)} 秒,可能复刻效果不理想`;
+					}
+				});
+			},
+
+			async registerVoice() {
+				if (!this.canRegisterVoice || !this.voiceFile) return;
+				this.voiceState = 'registering';
+				this.voiceError = '';
+				const up = await uploadVoiceSample(this.voiceFile, this.voiceFile.name);
+				if (!up.ok) {
+					this.voiceState = 'error';
+					this.voiceError = `上传失败: ${up.error}`;
+					return;
+				}
+				const cl = await cloneVoice({ fileId: up.fileId });
+				if (!cl.ok) {
+					this.voiceState = 'error';
+					this.voiceError = `复刻失败: ${cl.error}`;
+					return;
+				}
+				this.voiceId = cl.voiceId;
+				const sampleBlob = base64ToBlob(cl.sampleAudioB64, cl.sampleAudioMime);
+				this.voiceSampleUrl = URL.createObjectURL(sampleBlob);
+				this.voiceState = 'previewing';
+			},
+
+			async confirmVoice() {
+				if (this.voiceState !== 'previewing' || !this.voiceFile) return;
+				if (!this.artistSlug || !this.artistName.trim()) {
+					this.voiceError = '请先在「你是谁」填好显示名,系统才能把声音绑到你的页面';
+					this.voiceState = 'recorded';
+					return;
+				}
+				try {
+					// 1) 上传音色样本到 audio bucket
+					const ext = (this.voiceFile.name.split('.').pop() || 'wav')
+						.toLowerCase()
+						.replace(/[^a-z0-9]/g, '');
+					const samplePath = await uploadVoiceSampleToBucket(
+						this.artistSlug,
+						this.voiceFile,
+						ext,
+					);
+					this.voiceSamplePath = samplePath;
+					// 2) 确保 artists 行存在
+					await upsertArtist({
+						slug: this.artistSlug,
+						name: this.artistName.trim(),
+						contact: this.artistContact.trim(),
+					});
+					// 3) 写 voice_id + sample_path + consent_at
+					await setArtistVoice({
+						slug: this.artistSlug,
+						voiceId: this.voiceId,
+						voiceSamplePath: samplePath,
+						consentedAt: new Date().toISOString(),
+					});
+					// 4) 本机缓存,刷新页面也能复用
+					try {
+						const VOICES_KEY = 'pf:voices:v1';
+						const all = JSON.parse(localStorage.getItem(VOICES_KEY) || '{}');
+						all[this.artistSlug] = {
+							voiceId: this.voiceId,
+							voiceSamplePath: samplePath,
+							consentAt: new Date().toISOString(),
+						};
+						localStorage.setItem(VOICES_KEY, JSON.stringify(all));
+					} catch {}
+					this.voiceState = 'done';
+				} catch (e: any) {
+					this.voiceState = 'error';
+					this.voiceError = `保存失败: ${e?.message || String(e)}`;
+				}
+			},
+
+			resetVoice() {
+				if (this.voiceFileUrl) URL.revokeObjectURL(this.voiceFileUrl);
+				if (this.voiceSampleUrl) URL.revokeObjectURL(this.voiceSampleUrl);
+				this.voiceFile = null;
+				this.voiceFileUrl = '';
+				this.voiceFileName = '';
+				this.voiceFileDuration = '';
+				this.voiceConsent = false;
+				this.voiceId = '';
+				this.voiceSamplePath = '';
+				this.voiceSampleUrl = '';
+				this.voiceError = '';
+				this.voiceState = 'idle';
+			},
+
+			/** 根据当前 slug 从 localStorage 还原已登记的音色 */
+			restoreVoiceForCurrentSlug() {
+				if (!this.artistSlug) return;
+				try {
+					const all = JSON.parse(localStorage.getItem('pf:voices:v1') || '{}');
+					const rec = all[this.artistSlug];
+					if (rec && rec.voiceId) {
+						this.voiceId = rec.voiceId;
+						this.voiceSamplePath = rec.voiceSamplePath || '';
+						this.voiceState = 'done';
+					}
+				} catch {}
+			},
+
+			/** 发布完一张图后,生成解说词 + 合成 mp3 + 写回行(灵魂功能 D4)。
+			 *  失败不抛错,只在 item.error 上挂提示 —— 解说是锦上添花,
+			 *  不能因为它失败就让用户的上传白干。 */
+			async generateAndAttachNarration(item: FileItem, photoId: string) {
+				item.status = 'narrating';
+				try {
+					const ctx = {
+						title: item.title,
+						description: item.description,
+						tags: item.ai.suggestion?.tags,
+						curatorNote: item.ai.suggestion?.curatorNote,
+					};
+					const nr = await generateNarrationText(item.file, ctx);
+					if (!nr.ok) {
+						item.error = `解说词失败: ${nr.error}(图片仍发布成功)`;
+						return;
+					}
+					const sr = await synthesizeSpeech({
+						voiceId: this.voiceId,
+						text: nr.text,
+						style: 'narration',
+					});
+					if (!sr.ok) {
+						item.error = `语音合成失败: ${sr.error}(图片仍发布成功)`;
+						return;
+					}
+					const path = await uploadNarrationMp3(sr.audio, this.artistSlug, photoId);
+					await setNarration(photoId, nr.text, path);
+					item.narrationText = nr.text;
+					item.narrationPath = path;
+				} catch (e: any) {
+					item.error = `解说生成异常: ${e?.message || String(e)}(图片仍发布成功)`;
+				}
 			},
 			analyzeAllPending() {
 				if (!this.aiOn) return;
@@ -736,15 +1053,16 @@ import MainLayout from '../layouts/MainLayout.astro';
 					try {
 						item.status = 'uploading';
 						item.progress = 0;
+						let photoId = '';
 						if (this.mode === 'mock') {
-							await mockUploadOne(item, {
+							photoId = await mockUploadOne(item, {
 								artistSlug: this.artistSlug,
 								collectionSlug: this.collectionSlug,
 								meta,
 							});
 						} else {
 							const { width, height } = await readImageMeta(item.file);
-							await uploadPhoto(item.file, {
+							const entry = await uploadPhoto(item.file, {
 								artistSlug: this.artistSlug,
 								collectionSlug: this.collectionSlug,
 								meta,
@@ -755,6 +1073,11 @@ import MainLayout from '../layouts/MainLayout.astro';
 									item.progress = p;
 								},
 							});
+							photoId = entry.id;
+						}
+						// 灵魂功能：发布完图后,如果艺术家已登记声音,生成 AI 解说 mp3
+						if (this.voiceId && photoId) {
+							await this.generateAndAttachNarration(item, photoId);
 						}
 						item.status = 'done';
 						item.progress = 100;
@@ -792,7 +1115,7 @@ import MainLayout from '../layouts/MainLayout.astro';
 	async function mockUploadOne(
 		item: FileItem,
 		opts: { artistSlug: string; collectionSlug: string; meta: PhotoMeta },
-	) {
+	): Promise<string> {
 		const { width, height, dataUrl } = await readImageMeta(item.file);
 
 		// 模拟上传进度
@@ -823,6 +1146,7 @@ import MainLayout from '../layouts/MainLayout.astro';
 				: { mockSeed: `${opts.artistSlug}-${Math.random().toString(36).slice(2, 8)}` }),
 		};
 		saveMockUpload(entry);
+		return id;
 	}
 
 	(window as any).uploadApp = uploadApp;
