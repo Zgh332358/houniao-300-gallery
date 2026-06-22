@@ -167,7 +167,15 @@ async function stepChat(
 	const resp = await fetch(`${STEP_BASE_URL}/chat/completions`, {
 		method: 'POST',
 		headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-		body: JSON.stringify({ model: model || DEFAULT_MODEL, messages, temperature: 0.7 }),
+		body: JSON.stringify({
+			model: model || DEFAULT_MODEL,
+			messages,
+			temperature: 0.7,
+			// step-3.7-flash 默认会先生成大段 reasoning_content 再出最终内容,
+			// 一次识图常 8~15 秒。"minimal" 让模型几乎不思考直出结论,
+			// 速度通常 2~4 秒(质量会降,接受这个权衡)。
+			reasoning_effort: 'minimal',
+		}),
 	});
 
 	if (!resp.ok) {
