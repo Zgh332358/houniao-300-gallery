@@ -3,64 +3,146 @@ import 'glightbox/dist/css/glightbox.css';
 import '../styles/glightbox-custom.css';
 ---
 
-<div class="max-w-2xl mx-auto text-center mb-16">
+<div class="max-w-2xl mx-auto text-center mb-12">
 	<h2 class="text-3xl md:text-4xl font-bold mb-4">最新作品</h2>
 	<p class="text-gray-600">驻地艺术家最近上传的作品</p>
 </div>
-<div class="p-4">
-	<section
-		id="photo-grid"
-		class="relative w-full mx-auto overflow-hidden"
-	>
-	</section>
-	<div id="featured-empty" class="text-center py-20 text-gray-400 hidden">
-		还没有作品。<a class="underline ml-2" href={`${import.meta.env.BASE_URL}/upload/`}>上传第一张 →</a>
+<div class="featured-marquee-wrap">
+	<div id="featured-marquee" class="featured-marquee-track">
 	</div>
 </div>
+<div id="featured-empty" class="text-center py-20 text-gray-400 hidden">
+	还没有作品。<a class="underline ml-2" href={`${import.meta.env.BASE_URL}/upload/`}>上传第一张 →</a>
+</div>
+
+<style>
+	/* 横向无缝流动条:track 渲染两遍图片,从左往右滚 */
+	.featured-marquee-wrap {
+		overflow: hidden;
+		padding-block: 1rem;
+		/* 两端淡出,避免硬切边缘 */
+		mask-image: linear-gradient(to right, transparent, black 4%, black 96%, transparent);
+		-webkit-mask-image: linear-gradient(to right, transparent, black 4%, black 96%, transparent);
+	}
+	.featured-marquee-track {
+		display: flex;
+		gap: 12px;
+		width: max-content;
+		animation: featured-marquee-flow 60s linear infinite;
+		will-change: transform;
+	}
+	.featured-marquee-wrap:hover .featured-marquee-track {
+		animation-play-state: paused;
+	}
+	.featured-marquee-track .photo-item {
+		flex: 0 0 auto;
+		height: 320px;
+		display: block;
+		overflow: hidden;
+		border-radius: 2px;
+		transition: transform 0.2s ease;
+	}
+	.featured-marquee-track .photo-item:hover {
+		transform: scale(1.02);
+		z-index: 2;
+	}
+	.featured-marquee-track .photo-item img {
+		height: 100%;
+		width: auto;
+		display: block;
+		object-fit: cover;
+	}
+	@media (max-width: 640px) {
+		.featured-marquee-track .photo-item {
+			height: 200px;
+		}
+	}
+	/* track 起点:duplicate 集合在视野中;终点:原始集合在视野中 ——
+	 * 因两份内容像素级一致,看起来就是从左往右匀速流过 */
+	@keyframes featured-marquee-flow {
+		from { transform: translate3d(-50%, 0, 0); }
+		to   { transform: translate3d(0, 0, 0); }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.featured-marquee-track {
+			animation: none;
+			transform: translate3d(-50%, 0, 0);
+		}
+	}
+</style>
 
 <script>
-	import { listAll, deliveryUrl, srcSet, type PhotoEntry } from '../lib/photos';
-	import { setupGallery } from '../scripts/photo-grid';
+	import GLightbox from 'glightbox';
+	import { listAll, deliveryUrl, type PhotoEntry } from '../lib/photos';
 
 	const FEATURED_LIMIT = 24;
+	let _lightbox: ReturnType<typeof GLightbox> | null = null;
 
 	async function loadFeatured() {
-		const grid = document.getElementById('photo-grid');
+		const track = document.getElementById('featured-marquee');
 		const empty = document.getElementById('featured-empty');
-		if (!grid) return;
+		const wrap = document.querySelector('.featured-marquee-wrap') as HTMLElement | null;
+		if (!track || !wrap) return;
 
 		const all = await listAll();
 		const photos = all.slice(0, FEATURED_LIMIT);
 
 		if (photos.length === 0) {
 			empty?.classList.remove('hidden');
+			wrap.style.display = 'none';
 			return;
 		}
 
-		grid.innerHTML = '';
-		for (const p of photos) {
-			grid.appendChild(buildLink(p));
+		track.innerHTML = '';
+		// 渲染两遍相同的列表 —— 当 track 从 -50% 滚到 0%,duplicate 这一份
+		// 滚出视野的同时原始这份恰好滚进来,像素级对齐,就实现了无缝循环
+		for (let i = 0; i < 2; i++) {
+			for (const p of photos) {
+				track.appendChild(buildLink(p, i === 1));
+			}
 		}
-		setupGallery();
+
+		// 速度跟图片数挂钩:每张图大约 2.5s 通过视野,常见 24 张 → 60s 一圈
+		track.style.animationDuration = `${Math.max(30, photos.length * 2.5)}s`;
+
+		// GLightbox 只挂在原始那一份(.glightbox-primary),避免相册里出现重复幻灯
+		if (_lightbox) {
+			try { _lightbox.destroy(); } catch { /* ignore */ }
+		}
+		_lightbox = GLightbox({
+			selector: '.featured-marquee-wrap a.glightbox-primary',
+			openEffect: 'zoom',
+			closeEffect: 'fade',
+			width: 'auto',
+			height: 'auto',
+		});
 	}
 
-	function buildLink(p: PhotoEntry) {
+	function buildLink(p: PhotoEntry, isDuplicate: boolean) {
 		const a = document.createElement('a');
-		a.className = 'photo-item glightbox absolute transition-transform hover:scale-[1.02] hover:z-10';
+		// 原始那份挂 .glightbox-primary 让 GLightbox 拦截;
+		// duplicate 那份还是 <a href> 但点击直接跳到原图(不开灯箱),
+		// 用户体感是「看到的图就能点」,不出现死链接区
+		a.className = 'photo-item' + (isDuplicate ? '' : ' glightbox-primary');
 		a.href = deliveryUrl(p, { width: 2000 });
-		a.dataset.gallery = 'featured';
-		a.dataset.type = 'image';
-		if (p.meta.description) a.dataset.glightbox = `title: ${p.meta.description}`;
+		if (!isDuplicate) {
+			a.dataset.gallery = 'featured';
+			a.dataset.type = 'image';
+			if (p.meta.description) a.dataset.glightbox = `title: ${p.meta.description}`;
+		} else {
+			// duplicate 链接对屏幕阅读器和 SEO 都隐藏,避免被当 24 张以外的内容
+			a.setAttribute('aria-hidden', 'true');
+			a.tabIndex = -1;
+			a.target = '_blank';
+			a.rel = 'noopener';
+		}
 
 		const img = document.createElement('img');
 		img.src = deliveryUrl(p, { width: 800 });
-		img.srcset = srcSet(p);
-		img.sizes = '(max-width: 768px) 50vw, 33vw';
-		img.alt = p.meta.title || '';
+		img.alt = isDuplicate ? '' : p.meta.title || '';
 		img.width = p.width;
 		img.height = p.height;
 		img.loading = 'lazy';
-		img.className = 'w-full h-full object-cover rounded-sm shadow-sm hover:shadow-lg transition-shadow';
 		a.appendChild(img);
 		return a;
 	}
