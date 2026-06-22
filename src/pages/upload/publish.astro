@@ -43,18 +43,43 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 				<div class="relative aspect-square overflow-hidden rounded">
 					<img :src="p.previewUrl" class="w-full h-full object-cover" />
 					<div
-						class="absolute inset-0 flex items-center justify-center text-white text-xs font-medium"
-						:class="p.publishStatus === 'pending' ? 'bg-black/40' : (p.publishStatus === 'uploading' ? 'bg-violet-600/70' : (p.publishStatus === 'narrating' ? 'bg-violet-700/80' : (p.publishStatus === 'done' ? 'bg-green-600/60' : (p.publishStatus === 'error' ? 'bg-red-600/70' : 'bg-transparent'))))"
+						class="absolute inset-0 flex items-center justify-center text-white text-xs font-medium text-center px-1"
+						:class="p.publishStatus === 'pending' ? 'bg-black/40' : (p.publishStatus === 'uploading' ? 'bg-violet-600/70' : (p.publishStatus === 'narrating' ? 'bg-violet-700/80' : (p.publishStatus === 'done' && !p.publishError ? 'bg-green-600/60' : (p.publishStatus === 'done' && p.publishError ? 'bg-amber-600/75' : (p.publishStatus === 'error' ? 'bg-red-600/70' : 'bg-transparent')))))"
 						x-show="p.publishStatus !== 'idle'"
 					>
 						<span x-show="p.publishStatus === 'pending'">排队</span>
 						<span x-show="p.publishStatus === 'uploading'" x-text="`传 ${p.uploadPct}%`"></span>
 						<span x-show="p.publishStatus === 'narrating'">🎙️ 解说</span>
-						<span x-show="p.publishStatus === 'done'">✓</span>
-						<span x-show="p.publishStatus === 'error'">!</span>
+						<span x-show="p.publishStatus === 'done' && !p.publishError">✓ 完整</span>
+						<span x-show="p.publishStatus === 'done' && p.publishError">⚠️ 无解说</span>
+						<span x-show="p.publishStatus === 'error'">! 失败</span>
 					</div>
 				</div>
 			</template>
+		</section>
+
+		<!-- 失败明细列表(发布完才显示) -->
+		<section
+			x-show="!publishing && photos.some((p) => p.publishError || p.publishStatus === 'error')"
+			class="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-2 text-sm"
+		>
+			<p class="font-semibold text-amber-900">⚠️ 部分图片有问题:</p>
+			<ul class="space-y-1 text-amber-900">
+				<template x-for="p in photos.filter((x) => x.publishError || x.publishStatus === 'error')" :key="p.id">
+					<li class="flex gap-2">
+						<img :src="p.previewUrl" class="w-10 h-10 object-cover rounded flex-shrink-0" />
+						<span class="text-xs leading-relaxed">
+							<strong x-text="p.title || p.filename"></strong>:
+							<span x-text="p.publishError || `发布失败:${p.error || '未知'}`"></span>
+						</span>
+					</li>
+				</template>
+			</ul>
+			<p class="text-xs text-amber-700 pt-2">
+				图本身已经传上去了,只是解说音频没生成。打开 DevTools Console(F12)看
+				<code class="bg-amber-100 px-1 rounded">[synthesizeSpeech] 失败 body</code> 那一行,
+				把内容贴出来定位原因。
+			</p>
 		</section>
 
 		<!-- 发布按钮 + 进度 -->
