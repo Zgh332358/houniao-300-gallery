@@ -13,7 +13,7 @@ const VOICE_PROMPT = '如果你听到我的声音,说明你正在看我的作品
 <WizardLayout
 	step="voice"
 	title="你的声音"
-	subtitle="对着麦克风朗读下面这句话,Step 的 step-tts-2 模型会用它克隆你的音色 — 之后每张作品都会用你的声音自动讲解。这一步必填。"
+	subtitle="对着麦克风朗读下面这句话,Step 的 stepaudio-2.5-tts 模型会用它克隆你的音色 — 之后每张作品都会用你的声音自动讲解。这一步必填。"
 >
 	<div x-data="voicePage()" x-init="init()" class="space-y-6" data-voice-prompt={VOICE_PROMPT}>
 		<!-- 提示词 -->
@@ -94,7 +94,7 @@ const VOICE_PROMPT = '如果你听到我的声音,说明你正在看我的作品
 				<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
 					<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="60" stroke-dashoffset="40"></circle>
 				</svg>
-				<span class="font-medium">正在让 step-tts-2 复刻你的音色...</span>
+				<span class="font-medium">正在让 stepaudio-2.5-tts 复刻你的音色...</span>
 			</div>
 			<p class="text-xs text-violet-700 mt-2 ml-7">通常 5~15 秒。</p>
 		</section>

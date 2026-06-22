@@ -21,8 +21,8 @@ import { getAiConfig } from './ai';
 
 const STEP_BASE_URL = 'https://api.stepfun.com/v1';
 
-/** 复刻与合成都用 step-tts-2 */
-export const VOICE_MODEL = 'step-tts-2';
+/** 复刻与合成都用 stepaudio-2.5-tts */
+export const VOICE_MODEL = 'stepaudio-2.5-tts';
 
 /* ---------- 类型 ---------- */
 
@@ -176,7 +176,7 @@ export interface SynthOptions {
 	text: string;
 	/** 0.5 ~ 2.0;默认 1.0 */
 	speed?: number;
-	/** 见 step-tts-2 文档,如 'happy' / 'sad' / 'calm' */
+	/** 见 stepaudio-2.5-tts 文档,如 'happy' / 'sad' / 'calm' */
 	emotion?: string;
 	/** 风格,如 'narration' / 'reading' */
 	style?: string;

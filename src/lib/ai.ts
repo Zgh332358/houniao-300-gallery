@@ -345,7 +345,7 @@ export interface NarrationOk {
 export type NarrationResult = NarrationOk | { ok: false; error: string };
 
 /**
- * 给一张作品生成 1~3 句口语化解说词，用于 step-tts-2 合成。
+ * 给一张作品生成 1~3 句口语化解说词，用于 stepaudio-2.5-tts 合成。
  * 复用 chat completions（含 vision），让模型同时看到图片与已生成的元数据上下文。
  */
 export async function generateNarrationText(
