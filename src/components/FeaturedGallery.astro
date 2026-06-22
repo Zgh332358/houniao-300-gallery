@@ -15,8 +15,11 @@ import '../styles/glightbox-custom.css';
 	还没有作品。<a class="underline ml-2" href={`${import.meta.env.BASE_URL}/upload/`}>上传第一张 →</a>
 </div>
 
-<style>
-	/* 横向无缝流动条:track 渲染两遍图片,从左往右滚 */
+<style is:global>
+	/* 横向无缝流动条:track 渲染两遍图片,从左往右滚。
+	 * 必须用 is:global —— 子节点 .photo-item 是 JS 在 runtime createElement
+	 * 加进来的,不会带 Astro scoped 的 data-astro-cid 属性,scoped 选择器
+	 * 整截命中不了,height/flex 不应用,track 撑不出宽度,动画就看不出效果 */
 	.featured-marquee-wrap {
 		overflow: hidden;
 		padding-block: 1rem;

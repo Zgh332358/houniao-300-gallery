@@ -1,6 +1,6 @@
 ---
 /**
- * 5 步流程预览 — 在首页第二屏让访客在点「开始」之前就知道路径有多长。
+ * 4 步流程预览 — 在首页第二屏让访客在点「开始」之前就知道路径有多长。
  * 纯展示组件,没交互。
  */
 
@@ -15,26 +15,20 @@ const steps = [
 	},
 	{
 		n: 2,
-		title: '你的声音',
-		hint: '对着麦克风念一句话,AI 现场克隆你的音色',
-		emoji: '🎤',
-	},
-	{
-		n: 3,
 		title: '作品集',
 		hint: '给这一组作品起个名字,比如「夜色街拍」',
 		emoji: '🗂️',
 	},
 	{
-		n: 4,
+		n: 3,
 		title: '选图 + AI 文案',
 		hint: '拖图进来,AI 自动写中英标题、描述、策展评语',
 		emoji: '🖼️',
 	},
 	{
-		n: 5,
+		n: 4,
 		title: '发布',
-		hint: '拿到属于你的 URL,发布的同时 AI 用你的声音录好解说',
+		hint: '拿到属于你的 URL,直接分享',
 		emoji: '✅',
 	},
 ];
@@ -44,13 +38,13 @@ const steps = [
 	<div class="container-custom max-w-5xl mx-auto px-4">
 		<div class="text-center mb-12">
 			<p class="text-sm text-violet-600 font-medium tracking-wider uppercase mb-2">
-				5 步 · 约 5 分钟
+				4 步 · 约 3 分钟
 			</p>
 			<h2 class="text-3xl md:text-4xl font-bold mb-3">从你打开网站,到你的展厅上线</h2>
 			<p class="text-gray-600">每一步页面顶部都会告诉你走到哪了 — 不用记</p>
 		</div>
 
-		<div class="grid grid-cols-1 md:grid-cols-5 gap-4 md:gap-2">
+		<div class="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-2">
 			{
 				steps.map((s, i) => (
 					<div class="relative">
@@ -79,7 +73,7 @@ const steps = [
 			>
 				准备好了 · 开始 →
 			</a>
-			<p class="text-xs text-gray-400 mt-3">需要安静的环境(为了录音清晰) · 一段对自己作品的几句话</p>
+			<p class="text-xs text-gray-400 mt-3">先准备好作品文件,再开始 · 几句话介绍每件作品</p>
 		</div>
 	</div>
 </section>
