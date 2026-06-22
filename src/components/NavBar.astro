@@ -10,7 +10,6 @@ const menuItems = [
 	{ name: '艺术家', link: `${base}/artists` },
 	{ name: '找作品', link: `${base}/search` },
 	{ name: '关于', link: `${base}/about` },
-	{ name: '投稿', link: `${base}/upload`, highlight: true },
 ];
 ---
 
@@ -22,10 +21,12 @@ const menuItems = [
 />
 
 <nav
-	x-data="{ isOpen: false, scrolled: false }"
+	x-data="navBar()"
+	x-init="init()"
 	@scroll.window.passive="scrolled = window.scrollY > 50"
 	class="fixed top-0 left-0 w-full z-50 transition-all duration-300"
 	:class="scrolled ? 'py-3 bg-white shadow-sm' : 'py-5 bg-transparent'"
+	data-base={base}
 >
 	<div class="container mx-auto px-4 sm:px-6 flex justify-between items-center">
 		<a href={base} id="logo" class="text-2xl md:text-4xl font-semibold tracking-tight">
@@ -35,24 +36,44 @@ const menuItems = [
 		<!-- Desktop Menu -->
 		<div class="hidden md:flex space-x-8 items-center">
 			{
-				menuItems.map((item) =>
-					item.highlight ? (
-						<a
-							href={item.link}
-							class="px-4 py-2 bg-black text-white rounded hover:bg-gray-800 transition-colors"
-						>
-							{item.name}
-						</a>
-					) : (
-						<a
-							href={item.link}
-							class="nav-link relative after:content-[''] after:absolute after:left-0 after:bottom-[-2px] after:h-[2px] after:bg-black after:w-0 hover:after:w-full transition-all"
-						>
-							{item.name}
-						</a>
-					),
-				)
+				menuItems.map((item) => (
+					<a
+						href={item.link}
+						class="nav-link relative after:content-[''] after:absolute after:left-0 after:bottom-[-2px] after:h-[2px] after:bg-black after:w-0 hover:after:w-full transition-all"
+					>
+						{item.name}
+					</a>
+				))
 			}
+			<!-- 投稿 / 我的画廊 — 看是否登录切两态 -->
+			<template x-if="!loggedIn">
+				<a
+					:href="`${baseStr}/login`"
+					class="px-4 py-2 bg-black text-white rounded hover:bg-gray-800 transition-colors"
+				>登录 / 投稿</a>
+			</template>
+			<template x-if="loggedIn">
+				<div class="flex items-center gap-3">
+					<a
+						:href="`${baseStr}/upload/setup/`"
+						class="px-4 py-2 bg-black text-white rounded hover:bg-gray-800 transition-colors"
+					>我的画廊</a>
+					<div class="text-xs text-gray-500 leading-tight">
+						<div x-text="phoneMasked" class="font-mono"></div>
+						<div>
+							<a
+								x-show="boundSlug"
+								:href="`${baseStr}/${boundSlug}/`"
+								class="text-violet-600 font-mono hover:underline"
+								x-text="`/${boundSlug}/`"
+							></a>
+							<span x-show="!boundSlug" class="text-amber-600">未绑定</span>
+							<span class="mx-1">·</span>
+							<button @click="logout()" class="hover:underline">退出</button>
+						</div>
+					</div>
+				</div>
+			</template>
 		</div>
 
 		<!-- Mobile Menu Button (44x44 触摸区) -->
@@ -88,6 +109,70 @@ const menuItems = [
 					</a>
 				))
 			}
+			<template x-if="!loggedIn">
+				<a :href="`${baseStr}/login`" @click="isOpen = false" class="text-lg block py-3 font-semibold">
+					登录 / 投稿
+				</a>
+			</template>
+			<template x-if="loggedIn">
+				<div class="border-t border-gray-100 mt-2 pt-2">
+					<a :href="`${baseStr}/upload/setup/`" @click="isOpen = false" class="text-lg block py-3 font-semibold">
+						我的画廊
+					</a>
+					<div class="text-xs text-gray-500 py-2 flex items-center gap-2">
+						<span class="font-mono" x-text="phoneMasked"></span>
+						<span x-show="boundSlug" class="font-mono text-violet-600" x-text="`/${boundSlug}/`"></span>
+						<button @click="logout()" class="ml-auto text-gray-500 underline">退出</button>
+					</div>
+				</div>
+			</template>
 		</div>
 	</div>
 </nav>
+
+<script>
+	import { getSession, clearSession, maskPhone } from '../lib/auth';
+
+	function navBar() {
+		return {
+			isOpen: false,
+			scrolled: false,
+			loggedIn: false,
+			phoneMasked: '',
+			boundSlug: '',
+			baseStr: '/',
+
+			init() {
+				this.baseStr = (this.$root as HTMLElement).dataset.base?.replace(/\/+$/, '') || '/';
+				this.refresh();
+				// 别的页面改 localStorage 时(比如 login 页 setSession),
+				// 同源 storage 事件能让本 tab 同步刷新登录态
+				window.addEventListener('storage', (e) => {
+					if (e.key === 'pf:auth:v1') this.refresh();
+				});
+			},
+			refresh() {
+				const s = getSession();
+				if (s) {
+					this.loggedIn = true;
+					this.phoneMasked = maskPhone(s.phone);
+					this.boundSlug = s.slug || '';
+				} else {
+					this.loggedIn = false;
+					this.phoneMasked = '';
+					this.boundSlug = '';
+				}
+			},
+			logout() {
+				if (!confirm('退出登录?')) return;
+				clearSession();
+				location.replace(`${this.baseStr}/login/`);
+			},
+		};
+	}
+
+	(window as any).navBar = navBar;
+	document.addEventListener('alpine:init', () => {
+		(window as any).Alpine?.data('navBar', navBar);
+	});
+</script>

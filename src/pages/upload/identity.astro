@@ -7,7 +7,54 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 	title="你是谁"
 	subtitle="一个名字 + 联系方式。联系方式只给运营 — 不会出现在你的作品页上。"
 >
-	<div x-data="identityPage()" x-init="init()" class="space-y-6">
+	<div x-data="identityPage()" x-init="init()" class="space-y-6" x-cloak>
+		<!-- 登录态横幅(两种态) -->
+		<section
+			x-show="mode === 'bound'"
+			class="border border-violet-200 bg-violet-50 rounded-lg p-4 flex items-center justify-between gap-3"
+		>
+			<div class="text-sm leading-relaxed">
+				<p class="text-violet-900">
+					已登录 · <span class="font-mono" x-text="phoneMasked"></span>
+				</p>
+				<p class="text-xs text-violet-700 mt-0.5">
+					你的画廊地址:<code class="px-1.5 py-0.5 bg-white rounded text-violet-800 font-mono" x-text="`/${session.slug}/`"></code>
+				</p>
+			</div>
+			<button
+				type="button"
+				@click="logout()"
+				class="text-xs text-violet-700 underline hover:text-violet-900 flex-shrink-0"
+			>
+				退出
+			</button>
+		</section>
+
+		<section
+			x-show="mode === 'register'"
+			class="border border-amber-200 bg-amber-50 rounded-lg p-4"
+		>
+			<p class="text-sm text-amber-900">
+				首次进入 · <span class="font-mono" x-text="phoneMasked"></span>
+			</p>
+			<p class="text-xs text-amber-700 mt-1">
+				为你的手机号绑定一个画廊地址 —— 填好下面的内容,点底部「创建画廊」。
+			</p>
+		</section>
+
+		<section
+			x-show="mode === 'created'"
+			class="border border-green-200 bg-green-50 rounded-lg p-4"
+		>
+			<p class="text-sm text-green-900">
+				✓ 画廊已创建 · <code class="px-1.5 py-0.5 bg-white rounded text-green-800 font-mono" x-text="`/${session.slug}/`"></code>
+			</p>
+			<p class="text-xs text-green-700 mt-1">
+				点页面底部「下一步」继续。
+			</p>
+		</section>
+
+		<!-- 主表单 -->
 		<section class="border border-gray-200 rounded-lg p-6 bg-white space-y-5">
 			<label class="block">
 				<span class="text-sm text-gray-600 block mb-1">显示名 *</span>
@@ -21,6 +68,22 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 				<p class="text-xs text-gray-500 mt-1.5" x-show="artistSlug">
 					你的页面地址将是 <code class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono" x-text="`/${artistSlug}/`"></code>
 				</p>
+			</label>
+
+			<label class="block" x-show="mode !== 'bound'">
+				<span class="text-sm text-gray-600 block mb-1">
+					画廊地址 slug *
+					<span class="text-xs text-gray-400">(只能小写字母、数字、短横)</span>
+				</span>
+				<input
+					type="text"
+					x-model="artistSlug"
+					@input="_lastAutoSlug = ''; persist()"
+					:disabled="mode !== 'register'"
+					:class="mode !== 'register' ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''"
+					placeholder="lin-mo"
+					class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-black font-mono"
+				/>
 			</label>
 
 			<label class="block">
@@ -38,8 +101,26 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 			</label>
 		</section>
 
+		<!-- 注册态:创建画廊按钮 -->
+		<section x-show="mode === 'register'" class="space-y-3">
+			<button
+				type="button"
+				@click="createGallery()"
+				:disabled="!canCreate || creating"
+				class="w-full py-3 bg-black text-white rounded font-medium hover:bg-violet-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+			>
+				<span x-show="!creating">创建画廊 →</span>
+				<span x-show="creating">创建中...</span>
+			</button>
+			<p
+				x-show="createError"
+				class="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3"
+				x-text="createError"
+			></p>
+		</section>
+
 		<p
-			x-show="!ready"
+			x-show="mode === 'bound' && !ready"
 			class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3"
 		>
 			显示名和联系方式都填了才能继续。
@@ -49,6 +130,10 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 	<script>
 		import { toSlug, isValidSlug } from '../../lib/photos';
 		import { getIdentity, setIdentity } from '../../lib/wizard';
+		import { getSession, bindSlugToSession, maskPhone, phoneHash, clearSession } from '../../lib/auth';
+		import { createArtist } from '../../lib/artists';
+
+		type Mode = 'register' | 'bound' | 'created';
 
 		function identityPage() {
 			return {
@@ -56,28 +141,69 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 				artistSlug: '',
 				artistContact: '',
 				_lastAutoSlug: '',
-				get ready(): boolean {
+				session: { phone: '', slug: '', expiresAt: 0 } as ReturnType<typeof getSession> | { phone: ''; slug: ''; expiresAt: 0 },
+				mode: 'register' as Mode,
+				creating: false,
+				createError: '',
+
+				get phoneMasked(): string {
+					return this.session ? maskPhone(this.session.phone) : '';
+				},
+				get canCreate(): boolean {
 					return (
 						this.artistName.trim().length > 0 &&
 						isValidSlug(this.artistSlug) &&
 						this.artistContact.trim().length > 0
 					);
 				},
+				get ready(): boolean {
+					if (this.mode === 'register') return false; // 必须先点"创建画廊"
+					return (
+						this.artistName.trim().length > 0 &&
+						isValidSlug(this.artistSlug) &&
+						this.artistContact.trim().length > 0
+					);
+				},
+
 				init() {
+					// 1. 没登录直接踢回 /login
+					const s = getSession();
+					if (!s) {
+						const base = (document.documentElement.dataset.base || '/').replace(/\/+$/, '');
+						location.replace(`${base}/login/`);
+						return;
+					}
+					this.session = s;
+
+					// 2. 决定 mode
+					this.mode = s.slug ? 'bound' : 'register';
+
+					// 3. 恢复 localStorage 里的 identity(如果有),否则空白
 					const id = getIdentity();
 					this.artistName = id.artistName;
-					this.artistSlug = id.artistSlug;
 					this.artistContact = id.artistContact;
-					this._lastAutoSlug = id.artistSlug;
+					if (s.slug) {
+						// 已绑:slug 来自 session,锁死
+						this.artistSlug = s.slug;
+					} else {
+						// 注册中:slug 从 identity 拿(允许用户折回来继续填)
+						this.artistSlug = id.artistSlug;
+					}
+					this._lastAutoSlug = this.artistSlug;
+
 					this.syncNext();
 					this.$watch('ready', () => this.syncNext());
 				},
+
 				recomputeSlug() {
+					// 已绑 slug 时,不让 name 改动连带改 slug
+					if (this.mode === 'bound') return;
 					if (!this.artistSlug || this._lastAutoSlug === this.artistSlug) {
 						this.artistSlug = toSlug(this.artistName);
 						this._lastAutoSlug = this.artistSlug;
 					}
 				},
+
 				persist() {
 					setIdentity({
 						artistName: this.artistName,
@@ -85,6 +211,45 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 						artistContact: this.artistContact,
 					});
 				},
+
+				async createGallery() {
+					if (this.creating) return;
+					this.createError = '';
+					if (!this.canCreate) {
+						this.createError = '请把名字、slug、联系方式都填了';
+						return;
+					}
+					if (!this.session?.phone) {
+						this.createError = '会话异常,请回 /login 重新进入';
+						return;
+					}
+					this.creating = true;
+					try {
+						const hash = await phoneHash(this.session.phone);
+						await createArtist({
+							slug: this.artistSlug,
+							name: this.artistName,
+							contact: this.artistContact,
+							phoneHash: hash,
+						});
+						// 写成功 → session 绑上 slug,UI 翻成 'created' 让 next 按钮可点
+						bindSlugToSession(this.artistSlug);
+						this.session = { ...this.session, slug: this.artistSlug };
+						this.mode = 'created';
+					} catch (e: any) {
+						this.createError = e?.message || String(e);
+					} finally {
+						this.creating = false;
+					}
+				},
+
+				logout() {
+					if (!confirm('退出登录?当前未发布的图会保留,但下次得重新输手机号。')) return;
+					clearSession();
+					const base = (document.documentElement.dataset.base || '/').replace(/\/+$/, '');
+					location.replace(`${base}/login/`);
+				},
+
 				syncNext() {
 					window.__wizardSetNextEnabled?.(this.ready);
 				},
@@ -95,4 +260,8 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 			(window as any).Alpine?.data('identityPage', identityPage);
 		});
 	</script>
+
+	<style is:global>
+		[x-cloak] { display: none !important; }
+	</style>
 </WizardLayout>

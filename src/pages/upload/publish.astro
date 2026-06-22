@@ -142,9 +142,11 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 			removePhoto,
 			clearAllPhotos,
 			gateForStep,
+			gateForLogin,
 			stepHref,
 			type WizardPhoto,
 		} from '../../lib/wizard';
+		import { requireSession } from '../../lib/auth';
 
 		interface PhotoView extends WizardPhoto {
 			previewUrl: string;
@@ -178,13 +180,18 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 				},
 
 				async init() {
+					const base = (document.documentElement.dataset.base || '/').replace(/\/+$/, '');
+					const loginUrl = gateForLogin(base);
+					if (loginUrl) {
+						location.replace(loginUrl);
+						return;
+					}
 					const gate = await gateForStep('publish');
 					if (gate && gate !== 'publish') {
-						const base = (document.documentElement.dataset.base || '/') as string;
 						location.replace(stepHref(base, gate));
 						return;
 					}
-					this.base = (document.documentElement.dataset.base || '/').replace(/\/+$/, '');
+					this.base = base;
 					const id = getIdentity();
 					this.artistName = id.artistName;
 					this.artistSlug = id.artistSlug;
@@ -208,6 +215,22 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 
 				async startPublish() {
 					if (this.publishing) return;
+					// 守门:必须登录,且 wizard 状态里的 artistSlug 必须等于会话绑定的
+					// slug(防止"已登录但别人手改了 localStorage identity"的情况)
+					try {
+						const auth = requireSession();
+						if (!auth.slug) {
+							this.globalError = '没绑定画廊地址 —— 回身份步先创建画廊';
+							return;
+						}
+						if (this.artistSlug !== auth.slug) {
+							this.globalError = `当前会话绑定的是 /${auth.slug}/,但本地 identity 是 /${this.artistSlug}/ —— 不一致,拒绝发布。回身份步检查。`;
+							return;
+						}
+					} catch (e: any) {
+						this.globalError = e?.message || '需要先登录';
+						return;
+					}
 					this.publishing = true;
 					this.globalError = '';
 					for (const p of this.photos) p.publishStatus = 'pending';

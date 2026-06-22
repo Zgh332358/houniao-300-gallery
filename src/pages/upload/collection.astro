@@ -39,6 +39,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 			getCollection,
 			setCollection,
 			gateForStep,
+			gateForLogin,
 			stepHref,
 		} from '../../lib/wizard';
 
@@ -52,9 +53,14 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					return this.collectionName.trim().length > 0 && isValidSlug(this.collectionSlug);
 				},
 				async init() {
+					const base = (document.documentElement.dataset.base || '/').replace(/\/+$/, '');
+					const loginUrl = gateForLogin(base);
+					if (loginUrl) {
+						location.replace(loginUrl);
+						return;
+					}
 					const gate = await gateForStep('collection');
 					if (gate && gate !== 'collection') {
-						const base = (document.documentElement.dataset.base || '/') as string;
 						location.replace(stepHref(base, gate));
 						return;
 					}

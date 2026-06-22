@@ -288,6 +288,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 			updatePhoto,
 			removePhoto,
 			gateForStep,
+			gateForLogin,
 			stepHref,
 			type WizardPhoto,
 		} from '../../lib/wizard';
@@ -337,9 +338,14 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 				},
 
 				async init() {
+					const base = (document.documentElement.dataset.base || '/').replace(/\/+$/, '');
+					const loginUrl = gateForLogin(base);
+					if (loginUrl) {
+						location.replace(loginUrl);
+						return;
+					}
 					const gate = await gateForStep('photos');
 					if (gate && gate !== 'photos') {
-						const base = (document.documentElement.dataset.base || '/') as string;
 						location.replace(stepHref(base, gate));
 						return;
 					}

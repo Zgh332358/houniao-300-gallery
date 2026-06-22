@@ -1,10 +1,10 @@
 ---
 /**
- * 老 /upload/ 入口现在重定向到向导第一步 /upload/setup/。
+ * /upload/ 入口 → 永远先送到 /login。/login 检测已登录就立刻跳进 wizard。
  * 写成 meta refresh + JS 双保险,静态托管(GH Pages)也能用。
  */
 const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
-const target = `${base}/upload/setup/`;
+const target = `${base}/login/`;
 ---
 
 <!doctype html>

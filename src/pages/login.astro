@@ -1,0 +1,130 @@
+---
+import MainLayout from '../layouts/MainLayout.astro';
+
+const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
+---
+
+<MainLayout>
+	<section class="pt-32 pb-20" x-data="loginPage()" x-init="init()">
+		<div class="max-w-md mx-auto px-4">
+			<header class="text-center mb-10">
+				<h1 class="text-3xl md:text-4xl font-bold mb-3">进入你的画廊</h1>
+				<p class="text-gray-600">
+					输入手机号 — 已经有画廊的就直接进编辑;<br />还没有的会帮你创建一个。
+				</p>
+			</header>
+
+			<section class="border border-gray-200 rounded-lg p-6 bg-white space-y-5">
+				<label class="block">
+					<span class="text-sm text-gray-600 block mb-1">手机号</span>
+					<input
+						type="tel"
+						x-model="phone"
+						@keydown.enter="submit()"
+						placeholder="138xxxx xxxx 或 +86 138 ..."
+						autocomplete="tel"
+						class="w-full px-3 py-3 border border-gray-300 rounded focus:outline-none focus:border-black text-base"
+					/>
+					<p class="text-xs text-gray-400 mt-2">
+						🔒 不会公开,仅用于让你下次回来还能找到自己的画廊。
+						我们存的是 SHA-256 哈希,不存原始号码。
+					</p>
+				</label>
+
+				<button
+					type="button"
+					@click="submit()"
+					:disabled="busy || phone.trim().length < 4"
+					class="w-full py-3 bg-black text-white rounded font-medium hover:bg-violet-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+				>
+					<span x-show="!busy">进入 →</span>
+					<span x-show="busy">查询中...</span>
+				</button>
+
+				<p
+					x-show="error"
+					class="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3"
+					x-text="error"
+				></p>
+
+				<div x-show="hint" class="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded p-3" x-html="hint">
+				</div>
+			</section>
+
+			<p class="text-center text-xs text-gray-400 mt-6">
+				这不是真的"账号系统" — 是基于手机号的轻识别。如果有人知道你手机号,
+				理论上能"以你的身份"进入。仅用于驻地艺术家场景的便捷找回。
+			</p>
+		</div>
+	</section>
+</MainLayout>
+
+<script>
+	import { phoneHash, getSession, setSession, normalizePhone } from '../lib/auth';
+	import { findArtistByPhoneHash } from '../lib/artists';
+
+	function loginPage() {
+		return {
+			phone: '',
+			busy: false,
+			error: '',
+			hint: '',
+			base: '',
+
+			init() {
+				this.base = (document.documentElement.dataset.base || '/').replace(/\/+$/, '');
+				// 已经登录过 → 直接跳 wizard,不让他重新登录
+				const s = getSession();
+				if (s) {
+					const target = s.slug
+						? `${this.base}/upload/setup/`  // 已绑 slug,继续 wizard
+						: `${this.base}/upload/identity/`;  // 注册中途,继续注册
+					location.replace(target);
+				}
+			},
+
+			async submit() {
+				if (this.busy) return;
+				const phone = normalizePhone(this.phone);
+				if (phone.length < 4) {
+					this.error = '手机号太短了,至少 4 位';
+					return;
+				}
+				this.busy = true;
+				this.error = '';
+				this.hint = '';
+				try {
+					const hash = await phoneHash(phone);
+					const artist = await findArtistByPhoneHash(hash);
+					if (artist) {
+						// 老用户:绑定的 slug 已存在,直接进编辑
+						setSession(phone, artist.slug);
+						this.hint = `欢迎回来 <strong>${artist.name}</strong> · 正在进入 <code>/${artist.slug}/</code> ...`;
+						setTimeout(() => {
+							location.replace(`${this.base}/upload/setup/`);
+						}, 600);
+					} else {
+						// 新用户:slug 还没绑,先存 phone 进 session,跳到 identity 填名字 + 选 slug
+						setSession(phone, '');
+						this.hint = '看起来你是第一次来 · 下一步为你创建画廊地址...';
+						setTimeout(() => {
+							location.replace(`${this.base}/upload/identity/`);
+						}, 600);
+					}
+				} catch (e: any) {
+					this.error = e?.message || '查询失败,请稍后再试';
+					this.busy = false;
+				}
+			},
+		};
+	}
+
+	(window as any).loginPage = loginPage;
+	document.addEventListener('alpine:init', () => {
+		(window as any).Alpine?.data('loginPage', loginPage);
+	});
+</script>
+
+<style>
+	[x-cloak] { display: none !important; }
+</style>

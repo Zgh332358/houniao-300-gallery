@@ -80,6 +80,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 
 	<script>
 		import { getAiConfig, setAiConfig, hasAiKey, DEFAULT_MODEL } from '../../lib/ai';
+		import { gateForLogin } from '../../lib/wizard';
 
 		function setupPage() {
 			return {
@@ -90,6 +91,12 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					return this.apiKey.trim().length > 0;
 				},
 				init() {
+					const base = (document.documentElement.dataset.base || '/').replace(/\/+$/, '');
+					const loginUrl = gateForLogin(base);
+					if (loginUrl) {
+						location.replace(loginUrl);
+						return;
+					}
 					const c = getAiConfig();
 					this.apiKey = c.apiKey;
 					this.model = c.model;
