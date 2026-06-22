@@ -1,13 +1,13 @@
 ---
 /**
  * 上传向导每一步页面的统一壳。提供:
- *   - NavBar(继承 MainLayout)
- *   - Sticky 进度条
+ *   - NavBar(继承 MainLayout) → 顶部 ~64px 是 fixed 的,WizardLayout 必须给它让位
+ *   - sticky 进度条:跟着滚动一直贴在 NavBar 下方
  *   - 内容区(slot)
- *   - 底部固定的「上一步 / 下一步」按钮
+ *   - 内容末尾的「上一步 / 下一步」按钮(inline,大,显眼) ——
+ *     不再用 fixed bottom 浮条,因为找不到
  *
- * 子页面的下一步是否可点,通过给 next 按钮加 :disabled 与 _wizard_next 函数控制 ——
- * 简单起见,这里只渲染 href 链接;子页面用 JS 在合适时机移除 .pointer-events-none 等。
+ * 子页面在 init 完成后调 window.__wizardSetNextEnabled(boolean) 开关下一步按钮。
  */
 
 import MainLayout from './MainLayout.astro';
@@ -32,61 +32,62 @@ const nextHref = next ? stepHref(base, next) : '';
 ---
 
 <MainLayout>
-	<UploadStepper current={step} />
+	<!-- pt-20/24 把内容压到 NavBar 下方 — 不然标题被 fixed NavBar 盖住一半 -->
+	<div class="pt-20 md:pt-24">
+		<UploadStepper current={step} />
 
-	<section class="pt-6 pb-32" data-wizard-step={step}>
-		<div class="container-custom max-w-3xl mx-auto px-4">
-			<header class="mb-8">
-				<p class="text-xs text-violet-600 font-medium tracking-widest uppercase mb-1">
-					第 {idx + 1} / {STEP_ORDER.length} 步
-				</p>
-				<h1 class="text-3xl md:text-4xl font-bold mb-2">{title || STEP_LABEL[step]}</h1>
-				{subtitle && <p class="text-gray-600">{subtitle}</p>}
-			</header>
+		<section class="pt-8 pb-16" data-wizard-step={step}>
+			<div class="container-custom max-w-3xl mx-auto px-4">
+				<header class="mb-8">
+					<p class="text-xs text-violet-600 font-medium tracking-widest uppercase mb-1">
+						第 {idx + 1} / {STEP_ORDER.length} 步
+					</p>
+					<h1 class="text-3xl md:text-4xl font-bold mb-2 leading-tight">
+						{title || STEP_LABEL[step]}
+					</h1>
+					{subtitle && <p class="text-gray-600 leading-relaxed">{subtitle}</p>}
+				</header>
 
-			<slot />
-		</div>
-	</section>
+				<slot />
 
-	<!-- 底部 sticky:上一步 / 下一步 -->
-	<nav class="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-gray-200">
-		<div class="container-custom max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-			{
-				prev ? (
-					<a
-						href={prevHref}
-						class="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1"
-					>
-						← {STEP_LABEL[prev]}
-					</a>
-				) : (
-					<span />
-				)
-			}
+				<!-- 内容末尾的导航 — 大、紫、显眼;不要藏在 fixed bottom 里 -->
+				<div
+					class="mt-12 pt-8 border-t border-gray-200 flex items-center justify-between gap-3 flex-wrap"
+				>
+					{
+						prev ? (
+							<a
+								href={prevHref}
+								class="px-5 py-3 text-sm text-gray-600 hover:text-gray-900 hover:underline flex items-center gap-1"
+							>
+								← {STEP_LABEL[prev]}
+							</a>
+						) : (
+							<span />
+						)
+					}
 
-			{
-				next ? (
-					<a
-						id="wizard-next"
-						href={nextHref}
-						class="wizard-next-btn px-6 py-2.5 bg-black text-white rounded-md font-medium hover:bg-violet-600 transition-colors flex items-center gap-2 pointer-events-none opacity-40"
-						data-next-step={next}
-					>
-						下一步:{STEP_LABEL[next]} →
-					</a>
-				) : (
-					<span />
-				)
-			}
-		</div>
-	</nav>
+					{
+						next ? (
+							<a
+								id="wizard-next"
+								href={nextHref}
+								class="wizard-next-btn inline-flex items-center gap-2 px-7 py-3.5 bg-violet-600 text-white rounded-lg font-semibold text-base shadow-lg shadow-violet-500/20 hover:bg-violet-700 hover:shadow-violet-500/30 transition-all pointer-events-none opacity-40"
+								data-next-step={next}
+							>
+								下一步:{STEP_LABEL[next]} →
+							</a>
+						) : (
+							<span class="text-sm text-gray-500">最后一步 — 在内容里点「开始发布」</span>
+						)
+					}
+				</div>
+			</div>
+		</section>
+	</div>
 </MainLayout>
 
 <script>
-	/**
-	 * 让所有 wizard 子页面在 init 完成后调一下 window.__wizardSetNextEnabled(true/false)
-	 * 来开关下一步按钮。
-	 */
 	declare global {
 		interface Window {
 			__wizardSetNextEnabled?: (enabled: boolean) => void;
