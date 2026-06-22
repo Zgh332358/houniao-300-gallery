@@ -237,10 +237,37 @@ export async function getPhoto(id: string): Promise<WizardPhoto | null> {
 	return r ?? null;
 }
 
+/**
+ * 把 Alpine Proxy / 任何 reactive 包装 deep unwrap 成纯 POJO/数组。
+ * IndexedDB 的 structured clone 算法对 Proxy 直接 DataCloneError,
+ * 这是 IDB 写入 Alpine 状态的标准坑。
+ *
+ * 已知可 clone 的内置类型(Blob/File/ArrayBuffer/Date)原样留下。
+ */
+function unwrapForIDB<T>(v: T): T {
+	if (v === null || v === undefined) return v;
+	if (typeof v !== 'object') return v;
+	if (
+		v instanceof Blob ||
+		v instanceof File ||
+		v instanceof ArrayBuffer ||
+		v instanceof Date ||
+		v instanceof RegExp
+	) {
+		return v;
+	}
+	if (Array.isArray(v)) return v.map(unwrapForIDB) as any;
+	const out: Record<string, unknown> = {};
+	for (const k of Object.keys(v)) {
+		out[k] = unwrapForIDB((v as any)[k]);
+	}
+	return out as any;
+}
+
 export async function updatePhoto(id: string, patch: Partial<WizardPhoto>): Promise<void> {
 	const cur = await getPhoto(id);
 	if (!cur) throw new Error(`photo ${id} not in IDB`);
-	const next = { ...cur, ...patch };
+	const next = unwrapForIDB({ ...cur, ...patch });
 	await tx('readwrite', (store) => store.put(next));
 }
 

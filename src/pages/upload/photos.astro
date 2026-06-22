@@ -463,8 +463,15 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 
 				/* ---------- 持久化:把视图层 patch 写回 IDB ---------- */
 				async persistPhoto(p: PhotoView) {
-					const { previewUrl: _u, chatMsgs: _m, chatInput: _i, chatBusy: _b, chatOpen: _o, ...rest } = p as any;
-					await updatePhoto(p.id, rest);
+					try {
+						const { previewUrl: _u, chatMsgs: _m, chatInput: _i, chatBusy: _b, chatOpen: _o, ...rest } = p as any;
+						await updatePhoto(p.id, rest);
+					} catch (e) {
+						// IDB 写失败不阻断业务 —— 内存里仍然在,UI 仍然响应,
+						// 只是下次刷新会丢这次的改动。常见原因:Alpine Proxy 没解包(已修),
+						// 或浏览器隐私模式存储被关。
+						console.warn('[persistPhoto] IDB 写入失败,会话内仍可用:', e);
+					}
 				},
 			};
 		}
