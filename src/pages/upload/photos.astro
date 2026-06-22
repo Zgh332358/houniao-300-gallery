@@ -5,7 +5,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 <WizardLayout
 	step="photos"
 	title="选图 + AI 文案"
-	subtitle="把你这次要发的图拖进来。AI 会读图、自动写双语标题/描述/五维标签/策展短评,并做发布前内容审核。你可以和 AI 多轮对话改写文案。"
+	subtitle="先把图加进来,自己写标题和描述。再点「✨ AI 识图」让多模态模型给一版建议 — 你可以采纳、可以无视、也可以打开聊天框让它再改。"
 >
 	<div x-data="photosPage()" x-init="init()" class="space-y-8">
 		<!-- 拖拽区 -->
@@ -19,142 +19,240 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 			<p class="text-gray-700 mb-3">把图片拖到这里 或</p>
 			<label class="inline-block px-5 py-2.5 bg-black text-white rounded cursor-pointer hover:bg-gray-800">
 				选择文件
-				<input
-					type="file"
-					accept="image/*"
-					multiple
-					class="hidden"
-					@change="handleFileInput($event)"
-				/>
+				<input type="file" accept="image/*" multiple class="hidden" @change="handleFileInput($event)" />
 			</label>
 			<p class="text-xs text-gray-500 mt-3">
-				JPG / PNG / WebP · 多选可一次拖多张
+				JPG / PNG / WebP · 加图后<strong>不会自动跑 AI</strong> — 你先填,需要建议时再点「AI 识图」
 			</p>
 		</section>
 
 		<!-- 列表 -->
-		<section class="space-y-4" x-show="photos.length > 0">
+		<section class="space-y-6" x-show="photos.length > 0">
 			<div class="flex items-center justify-between">
 				<h2 class="text-lg font-semibold">
 					本次发布 <span x-text="photos.length"></span> 张
 				</h2>
-				<p class="text-xs text-gray-500" x-show="anyAnalyzing">
-					⏳ AI 正在读图...
-				</p>
 			</div>
 
 			<template x-for="p in photos" :key="p.id">
 				<div class="border border-gray-200 rounded-lg overflow-hidden bg-white">
-					<div class="flex flex-col sm:flex-row gap-4 p-4">
+					<div class="flex flex-col md:flex-row gap-5 p-5">
+						<!-- 图 -->
 						<img
 							:src="p.previewUrl"
-							class="w-full sm:w-40 h-48 sm:h-32 object-cover rounded flex-shrink-0"
+							class="w-full md:w-56 h-56 md:h-48 object-cover rounded flex-shrink-0"
 						/>
-						<div class="flex-1 space-y-2 min-w-0">
-							<input
-								type="text"
-								x-model="p.title"
-								@input="p.titleEdited = true; persistPhoto(p)"
-								placeholder="中文标题"
-								class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:border-black"
-							/>
-							<input
-								type="text"
-								x-model="p.titleEn"
-								@input="persistPhoto(p)"
-								placeholder="English title (AI 自动填,可改)"
-								class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded text-gray-600 focus:outline-none focus:border-black"
-							/>
-							<textarea
-								x-model="p.description"
-								@input="p.descEdited = true; persistPhoto(p)"
-								placeholder="中文描述(可选)"
-								rows="2"
-								class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:border-black resize-none"
-							></textarea>
-							<input
-								type="text"
-								x-model="p.descriptionEn"
-								@input="persistPhoto(p)"
-								placeholder="English description (AI 自动填,可改)"
-								class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded text-gray-600 focus:outline-none focus:border-black"
-							/>
 
-							<!-- 状态 + 操作 -->
-							<div class="flex items-center gap-2 text-xs flex-wrap">
-								<span x-show="p.aiStatus === 'idle'" class="text-gray-400">还没分析</span>
-								<span x-show="p.aiStatus === 'analyzing'" class="text-violet-600">
-									✨ AI 读图中...
-								</span>
-								<span x-show="p.aiStatus === 'done' && p.moderation && p.moderation.safe" class="text-green-600">
-									✓ 通过审核
-								</span>
-								<span x-show="p.aiStatus === 'done' && p.moderation && !p.moderation.safe" class="text-red-600">
-									⛔ <span x-text="p.moderation.reason || '未通过'"></span> · 不可发布
-								</span>
-								<span x-show="p.aiStatus === 'error'" class="text-red-600" x-text="`AI 失败: ${p.aiError}`"></span>
-								<button
-									type="button"
-									x-show="p.aiStatus === 'idle' || p.aiStatus === 'error'"
-									@click="analyzeOne(p)"
-									class="px-2 py-1 text-violet-700 underline"
-								>用 AI 读这张</button>
-								<button
-									type="button"
-									@click="p.chatOpen = !p.chatOpen"
-									x-show="p.aiStatus === 'done'"
-									class="px-2 py-1 text-gray-600 hover:text-violet-700 underline"
-									x-text="p.chatOpen ? '收起对话' : '和 AI 聊改文案'"
-								></button>
+						<!-- 表单 + AI 建议 + 聊天 -->
+						<div class="flex-1 min-w-0 space-y-4">
+							<!-- 用户字段 -->
+							<div class="space-y-2">
+								<label class="block">
+									<span class="text-xs text-gray-500 mb-1 block">你的标题(中文) *</span>
+									<input
+										type="text"
+										x-model="p.title"
+										@input="persistPhoto(p)"
+										placeholder="给这张作品起个名字"
+										class="w-full px-3 py-2 text-sm border border-gray-200 rounded focus:outline-none focus:border-black"
+									/>
+								</label>
+								<label class="block">
+									<span class="text-xs text-gray-500 mb-1 block">你的描述(中文)</span>
+									<textarea
+										x-model="p.description"
+										@input="persistPhoto(p)"
+										placeholder="说说这张图 — 比如怎么拍的、当时在想什么、想让别人看到什么"
+										rows="3"
+										class="w-full px-3 py-2 text-sm border border-gray-200 rounded focus:outline-none focus:border-black resize-none"
+									></textarea>
+								</label>
+							</div>
+
+							<!-- AI 识图按钮 / 状态 -->
+							<div
+								class="border border-gray-200 bg-gray-50/60 rounded-lg p-4 space-y-3"
+							>
+								<div class="flex items-center justify-between gap-3 flex-wrap">
+									<div class="flex items-center gap-2">
+										<span class="text-base">✨</span>
+										<span class="text-sm font-medium">AI 识图建议</span>
+										<span x-show="p.aiStatus === 'done' && p.moderation && p.moderation.safe" class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+											✓ 通过审核
+										</span>
+										<span x-show="p.aiStatus === 'done' && p.moderation && !p.moderation.safe" class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+											⛔ 未通过审核
+										</span>
+									</div>
+									<button
+										type="button"
+										@click="analyzeOne(p)"
+										:disabled="p.aiStatus === 'analyzing'"
+										class="px-3 py-1.5 text-xs rounded font-medium transition-colors disabled:cursor-not-allowed"
+										:class="p.aiStatus === 'analyzing' ? 'bg-gray-200 text-gray-500' : (p.aiStatus === 'done' ? 'bg-white border border-violet-300 text-violet-700 hover:bg-violet-50' : 'bg-violet-600 text-white hover:bg-violet-700')"
+									>
+										<span x-show="p.aiStatus === 'idle'">▶ AI 识图</span>
+										<span x-show="p.aiStatus === 'analyzing'">读图中...</span>
+										<span x-show="p.aiStatus === 'done'">↻ 重新识图</span>
+										<span x-show="p.aiStatus === 'error'">↻ 重试</span>
+									</button>
+								</div>
+
+								<!-- AI 输出区:idle 文案、analyzing 文案、done 详情、error 文案 -->
+								<div x-show="p.aiStatus === 'idle'" class="text-xs text-gray-500">
+									点上面的「AI 识图」让多模态模型读这张图,给你一版标题/描述/标签/策展短评建议。
+									不点也不影响,但发布时会跳过 AI 审核 — 现场展示尽量识一下。
+								</div>
+
+								<div x-show="p.aiStatus === 'analyzing'" class="text-xs text-violet-600">
+									Step 多模态模型正在读图...
+								</div>
+
+								<div x-show="p.aiStatus === 'error'" class="text-xs text-red-600" x-text="`AI 失败:${p.aiError}`"></div>
+
+								<!-- AI 给的建议(独立草稿,不直接覆盖用户) -->
+								<div x-show="p.aiStatus === 'done'" class="space-y-3">
+									<!-- AI 标题 -->
+									<div>
+										<div class="flex items-center justify-between mb-1">
+											<span class="text-xs text-gray-500">AI 建议的标题</span>
+											<button
+												type="button"
+												x-show="p.aiTitle"
+												@click="adoptAiTitle(p)"
+												class="text-xs text-violet-700 hover:underline"
+											>↑ 采用为我的标题</button>
+										</div>
+										<input
+											type="text"
+											x-model="p.aiTitle"
+											@input="persistPhoto(p)"
+											class="w-full px-2 py-1.5 text-sm border border-violet-200 bg-white rounded focus:outline-none focus:border-violet-500"
+										/>
+									</div>
+
+									<!-- AI 描述 -->
+									<div>
+										<div class="flex items-center justify-between mb-1">
+											<span class="text-xs text-gray-500">AI 建议的描述</span>
+											<button
+												type="button"
+												x-show="p.aiDescription"
+												@click="adoptAiDescription(p)"
+												class="text-xs text-violet-700 hover:underline"
+											>↑ 采用为我的描述</button>
+										</div>
+										<textarea
+											x-model="p.aiDescription"
+											@input="persistPhoto(p)"
+											rows="3"
+											class="w-full px-2 py-1.5 text-sm border border-violet-200 bg-white rounded resize-none focus:outline-none focus:border-violet-500"
+										></textarea>
+									</div>
+
+									<!-- 双语英文 -->
+									<details class="text-xs">
+										<summary class="cursor-pointer text-gray-500 hover:text-gray-700">英文版(发布时直接使用)</summary>
+										<div class="mt-2 space-y-2">
+											<input
+												type="text"
+												x-model="p.titleEn"
+												@input="persistPhoto(p)"
+												placeholder="English title"
+												class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded text-gray-600 focus:outline-none focus:border-black"
+											/>
+											<input
+												type="text"
+												x-model="p.descriptionEn"
+												@input="persistPhoto(p)"
+												placeholder="English description"
+												class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded text-gray-600 focus:outline-none focus:border-black"
+											/>
+										</div>
+									</details>
+
+									<!-- 五维标签 -->
+									<div class="flex flex-wrap gap-1">
+										<template x-for="(v, k) in p.tags" :key="k">
+											<span x-show="v" class="px-2 py-0.5 text-[10px] bg-violet-50 text-violet-700 rounded-full">
+												<span class="opacity-60" x-text="k + ':'"></span>
+												<span x-text="v"></span>
+											</span>
+										</template>
+									</div>
+
+									<!-- 策展短评 -->
+									<p
+										x-show="p.curatorNote"
+										class="text-xs italic text-gray-500"
+										x-text="`策展短评:「${p.curatorNote}」`"
+									></p>
+
+									<!-- 审核失败原因 -->
+									<p
+										x-show="p.moderation && !p.moderation.safe"
+										class="text-xs text-red-600"
+										x-text="`⛔ 审核未通过:${p.moderation.reason} — 不可发布,请移除或换图`"
+									></p>
+
+									<!-- 聊天框开关 -->
+									<button
+										type="button"
+										@click="p.chatOpen = !p.chatOpen"
+										class="text-xs text-gray-600 hover:text-violet-700 underline"
+										x-text="p.chatOpen ? '收起聊天' : '💬 和 AI 聊聊改改它的建议'"
+									></button>
+
+									<!-- 聊天窗 -->
+									<div x-show="p.chatOpen" class="border-t border-violet-100 pt-3 space-y-2">
+										<div class="space-y-1.5 max-h-56 overflow-y-auto bg-white p-3 border border-gray-100 rounded">
+											<template x-if="p.chatMsgs.length === 0">
+												<p class="text-xs text-gray-400">
+													告诉 AI 怎么改它的标题/描述。例:「改得更冷峻一点」「描述太长了」「换个标题,别用『光的研究』」
+												</p>
+											</template>
+											<template x-for="(m, i) in p.chatMsgs" :key="i">
+												<div class="text-xs">
+													<span
+														class="font-medium"
+														:class="m.role === 'user' ? 'text-gray-700' : 'text-violet-700'"
+														x-text="m.role === 'user' ? '你:' : 'AI:'"
+													></span>
+													<span class="text-gray-700" x-text="m.text"></span>
+												</div>
+											</template>
+										</div>
+										<div class="flex gap-2">
+											<input
+												type="text"
+												x-model="p.chatInput"
+												@keydown.enter="sendChat(p)"
+												:disabled="p.chatBusy"
+												placeholder="对 AI 说..."
+												class="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:border-black"
+											/>
+											<button
+												type="button"
+												@click="sendChat(p)"
+												:disabled="p.chatBusy || !p.chatInput.trim()"
+												class="px-3 py-1.5 text-xs bg-violet-600 text-white rounded hover:bg-violet-700 disabled:bg-gray-300"
+												x-text="p.chatBusy ? '...' : '发送'"
+											></button>
+										</div>
+										<p class="text-[10px] text-gray-400">
+											这里改的只是 AI 的建议草稿,不会动你上面写的标题和描述 — 想用的话点「↑ 采用」
+										</p>
+									</div>
+								</div>
+							</div>
+
+							<!-- 移除 -->
+							<div class="flex justify-end pt-1">
 								<button
 									type="button"
 									@click="removePhotoLocal(p)"
-									class="ml-auto text-gray-400 hover:text-red-600"
-								>移除</button>
-							</div>
-
-							<!-- 五维标签 -->
-							<div x-show="p.aiStatus === 'done'" class="flex flex-wrap gap-1">
-								<template x-for="(v, k) in p.tags" :key="k">
-									<span x-show="v" class="px-2 py-0.5 text-[10px] bg-violet-50 text-violet-700 rounded-full">
-										<span class="opacity-60" x-text="k + ':'"></span>
-										<span x-text="v"></span>
-									</span>
-								</template>
-							</div>
-							<p x-show="p.curatorNote" class="text-xs italic text-gray-500" x-text="`「${p.curatorNote}」`"></p>
-
-							<!-- 多轮对话 -->
-							<div x-show="p.chatOpen" class="border-t border-gray-100 pt-3 mt-2 space-y-2">
-								<div class="space-y-1.5 max-h-48 overflow-y-auto">
-									<template x-for="(m, i) in p.chatMsgs" :key="i">
-										<div class="text-xs">
-											<span
-												class="font-medium"
-												:class="m.role === 'user' ? 'text-gray-700' : 'text-violet-700'"
-												x-text="m.role === 'user' ? '你:' : 'AI:'"
-											></span>
-											<span class="text-gray-700" x-text="m.text"></span>
-										</div>
-									</template>
-								</div>
-								<div class="flex gap-2">
-									<input
-										type="text"
-										x-model="p.chatInput"
-										@keydown.enter="sendChat(p)"
-										:disabled="p.chatBusy"
-										placeholder="比如「改得更冷峻」「描述短一些」「换个标题」"
-										class="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:border-black"
-									/>
-									<button
-										type="button"
-										@click="sendChat(p)"
-										:disabled="p.chatBusy || !p.chatInput.trim()"
-										class="px-3 py-1.5 text-xs bg-violet-600 text-white rounded hover:bg-violet-700 disabled:bg-gray-300"
-										x-text="p.chatBusy ? '…' : '发送'"
-									></button>
-								</div>
+									class="text-xs text-gray-400 hover:text-red-600"
+								>移除这张</button>
 							</div>
 						</div>
 					</div>
@@ -167,6 +265,12 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 			class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3"
 		>
 			至少加一张图,才能去下一步发布。
+		</p>
+		<p
+			x-show="anyMissingTitle"
+			class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3"
+		>
+			每张图都要至少有「你的标题」 — 上面有空的,填一下。
 		</p>
 		<p
 			x-show="anyBlocked"
@@ -220,8 +324,16 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 						(p) => p.aiStatus === 'done' && p.moderation && p.moderation.safe === false,
 					);
 				},
+				get anyMissingTitle(): boolean {
+					return this.photos.some((p) => !p.title.trim());
+				},
 				get ready(): boolean {
-					return this.photos.length > 0 && !this.anyBlocked && !this.anyAnalyzing;
+					return (
+						this.photos.length > 0 &&
+						!this.anyBlocked &&
+						!this.anyAnalyzing &&
+						!this.anyMissingTitle
+					);
 				},
 
 				async init() {
@@ -255,10 +367,8 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					for (const f of Array.from(list)) {
 						if (!f.type.startsWith('image/')) continue;
 						const rec = await addPhoto(f);
-						const view = toView(rec);
-						this.photos.push(view);
-						// 自动启动 AI 分析(没异步等,让多张并行)
-						this.analyzeOne(view);
+						this.photos.push(toView(rec));
+						// 注意:这里不再自动 analyzeOne ——  让用户先写,需要时再点「AI 识图」
 					}
 				},
 
@@ -268,21 +378,27 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					this.photos = this.photos.filter((x) => x.id !== p.id);
 				},
 
-				/* ---------- AI ---------- */
+				/* ---------- AI 识图(被动触发) ---------- */
 				async analyzeOne(p: PhotoView) {
+					if (p.aiStatus === 'analyzing') return;
 					p.aiStatus = 'analyzing';
 					p.aiError = '';
 					await this.persistPhoto(p);
 					const file = new File([p.blob], p.filename, { type: p.mimeType });
-					const r = await analyzePhoto(file);
+					// 把用户已写的标题/描述喂给 AI,让它给"针对性建议"
+					const r = await analyzePhoto(file, {
+						userTitle: p.title,
+						userDescription: p.description,
+					});
 					if (!r.ok) {
 						p.aiStatus = 'error';
 						p.aiError = r.error;
 						await this.persistPhoto(p);
 						return;
 					}
-					if (!p.titleEdited && r.suggestion.title) p.title = r.suggestion.title;
-					if (!p.descEdited && r.suggestion.description) p.description = r.suggestion.description;
+					// AI 输出存到独立草稿字段,不动用户写的 title/description
+					p.aiTitle = r.suggestion.title || '';
+					p.aiDescription = r.suggestion.description || '';
 					if (r.suggestion.titleEn) p.titleEn = r.suggestion.titleEn;
 					if (r.suggestion.descriptionEn) p.descriptionEn = r.suggestion.descriptionEn;
 					p.tags = { ...p.tags, ...r.suggestion.tags };
@@ -291,20 +407,37 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					p.aiHistory = r.history;
 					p.aiReasoning = r.reasoning;
 					p.aiStatus = 'done';
+					p.chatOpen = false;
+					p.chatMsgs = [];
 					if (r.reply) p.chatMsgs.push({ role: 'assistant', text: r.reply });
 					await this.persistPhoto(p);
 				},
 
+				/* ---------- 采用 AI 建议 ---------- */
+				async adoptAiTitle(p: PhotoView) {
+					if (!p.aiTitle.trim()) return;
+					p.title = p.aiTitle;
+					await this.persistPhoto(p);
+				},
+				async adoptAiDescription(p: PhotoView) {
+					if (!p.aiDescription.trim()) return;
+					p.description = p.aiDescription;
+					await this.persistPhoto(p);
+				},
+
+				/* ---------- 多轮对话(只改 AI 草稿,不动用户字段) ---------- */
 				async sendChat(p: PhotoView) {
 					const text = p.chatInput.trim();
 					if (!text || p.chatBusy) return;
 					p.chatMsgs.push({ role: 'user', text });
 					p.chatInput = '';
 					p.chatBusy = true;
+					// 这里 cur 用 AI 自己的草稿,不用用户的 title/description ——
+					// chatRevise 是改 AI 那一版,不动用户原稿
 					const cur: AiSuggestion = {
-						title: p.title,
+						title: p.aiTitle,
 						titleEn: p.titleEn,
-						description: p.description,
+						description: p.aiDescription,
 						descriptionEn: p.descriptionEn,
 						curatorNote: p.curatorNote,
 						tags: p.tags,
@@ -318,18 +451,12 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					p.aiHistory = r.history;
 					if (r.reasoning) p.aiReasoning = r.reasoning;
 					if (r.moderation) p.moderation = r.moderation;
-					if (r.suggestion.title) {
-						p.title = r.suggestion.title;
-						p.titleEdited = true;
-					}
+					if (r.suggestion.title) p.aiTitle = r.suggestion.title;
 					if (r.suggestion.titleEn) p.titleEn = r.suggestion.titleEn;
-					if (r.suggestion.description) {
-						p.description = r.suggestion.description;
-						p.descEdited = true;
-					}
+					if (r.suggestion.description) p.aiDescription = r.suggestion.description;
 					if (r.suggestion.descriptionEn) p.descriptionEn = r.suggestion.descriptionEn;
 					p.tags = { ...p.tags, ...r.suggestion.tags };
-					p.curatorNote = r.suggestion.curatorNote;
+					if (r.suggestion.curatorNote) p.curatorNote = r.suggestion.curatorNote;
 					p.chatMsgs.push({ role: 'assistant', text: r.reply });
 					await this.persistPhoto(p);
 				},

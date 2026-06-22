@@ -247,7 +247,17 @@ function parseTurn(content: string): Parsed {
 
 /* ---------- 首轮：读图分析 + 审核 ---------- */
 
-export async function analyzePhoto(file: File): Promise<AnalyzeResult> {
+export interface AnalyzeContext {
+	/** 用户已经自己写的中文标题(可空) */
+	userTitle?: string;
+	/** 用户已经自己写的中文描述(可空) */
+	userDescription?: string;
+}
+
+export async function analyzePhoto(
+	file: File,
+	ctx: AnalyzeContext = {},
+): Promise<AnalyzeResult> {
 	const t0 = performance.now();
 	let imageDataUrl: string;
 	try {
@@ -256,12 +266,21 @@ export async function analyzePhoto(file: File): Promise<AnalyzeResult> {
 		return { ok: false, error: (e as Error).message };
 	}
 
+	// 给模型看用户已经写了什么,让它在用户视角上做"补充建议",
+	// 而不是凭空另起一个版本
+	const ctxLines: string[] = [];
+	if (ctx.userTitle?.trim()) ctxLines.push(`艺术家自己写的标题：${ctx.userTitle.trim()}`);
+	if (ctx.userDescription?.trim()) ctxLines.push(`艺术家自己写的描述：${ctx.userDescription.trim()}`);
+	const userText = ctxLines.length
+		? `这是我的作品。我已经写了一版文案如下:\n${ctxLines.join('\n')}\n请先做内容审核;然后基于这张图给一版你自己的标题/描述/标签/策展短评 —— 作为建议供我参考,不要直接覆盖我的。中文/英文/标签都按 system 约定输出。`
+		: '这是我的作品。我还没写任何文案,请先做内容审核,再生成一版完整的标题/描述/标签/策展短评。';
+
 	const history: ChatMessage[] = [
 		{ role: 'system', content: SYSTEM_PROMPT },
 		{
 			role: 'user',
 			content: [
-				{ type: 'text', text: '这是我的作品，请先做内容审核，再生成第一版文案。' },
+				{ type: 'text', text: userText },
 				{ type: 'image_url', image_url: { url: imageDataUrl } },
 			],
 		},

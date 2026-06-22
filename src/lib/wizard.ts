@@ -118,12 +118,15 @@ export interface WizardPhoto {
 	width: number;
 	height: number;
 	addedAt: number;
-	/** 艺术家可编辑字段 */
+	/** ===== 用户写的(发布时的权威字段) ===== */
 	title: string;
 	titleEn: string;
 	description: string;
 	descriptionEn: string;
-	/** AI 返回 */
+	/** ===== AI 识图后的独立草稿(只是建议,不直接发布) ===== */
+	aiTitle: string;
+	aiDescription: string;
+	/** ===== AI 通用元数据(直接落库) ===== */
 	tags: { theme: string; style: string; medium: string; palette: string; mood: string };
 	curatorNote: string;
 	moderation: { safe: boolean; reason: string; categories: string[] } | null;
@@ -131,7 +134,7 @@ export interface WizardPhoto {
 	aiReasoning: string;
 	aiStatus: 'idle' | 'analyzing' | 'done' | 'error';
 	aiError: string;
-	/** 用户是否手动改过(避免被后续 AI 调用覆盖) */
+	/** 用户是否手动改过(留作历史兼容,新流程不再用) */
 	titleEdited: boolean;
 	descEdited: boolean;
 }
@@ -202,10 +205,14 @@ export async function addPhoto(file: File): Promise<WizardPhoto> {
 		width,
 		height,
 		addedAt: Date.now(),
-		title: stripExt(file.name),
+		// 用户字段:不预填,让用户主动写
+		title: '',
 		titleEn: '',
 		description: '',
 		descriptionEn: '',
+		// AI 草稿:留空,等点「AI 识图」才填
+		aiTitle: '',
+		aiDescription: '',
 		tags: { theme: '', style: '', medium: '', palette: '', mood: '' },
 		curatorNote: '',
 		moderation: null,
