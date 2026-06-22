@@ -305,3 +305,71 @@ export async function chatRevise(
 		return { ok: false, error: (e as Error).message };
 	}
 }
+
+/* ---------- 解说词生成（M3 灵魂功能用） ---------- */
+
+const NARRATION_SYSTEM_PROMPT = `你正在为一位艺术家的画作配语音导览解说词。
+要求：
+- 1~3 句话，加起来不超过 80 字
+- 像策展人在艺术家身边轻声讲解，亲切但不啰嗦
+- 描述画面里的关键观察 + 一点点情绪/解读，避免堆砌形容词
+- 不要"这幅画"、"在这件作品中"这类废话开头
+- 不要 Markdown、不要列表、不要引号、不要署名
+- 输出纯文本即可，不要 JSON、不要前后缀`;
+
+export interface NarrationContext {
+	title?: string;
+	description?: string;
+	tags?: Partial<AiTags>;
+	curatorNote?: string;
+}
+
+export interface NarrationOk {
+	ok: true;
+	text: string;
+	ms: number;
+}
+export type NarrationResult = NarrationOk | { ok: false; error: string };
+
+/**
+ * 给一张作品生成 1~3 句口语化解说词，用于 step-tts-2 合成。
+ * 复用 chat completions（含 vision），让模型同时看到图片与已生成的元数据上下文。
+ */
+export async function generateNarrationText(
+	file: File,
+	ctx: NarrationContext = {},
+): Promise<NarrationResult> {
+	const t0 = performance.now();
+	try {
+		const dataUrl = await fileToAiDataUrl(file);
+		const ctxLines: string[] = [];
+		if (ctx.title) ctxLines.push(`标题：${ctx.title}`);
+		if (ctx.description) ctxLines.push(`描述：${ctx.description}`);
+		if (ctx.curatorNote) ctxLines.push(`策展短评：${ctx.curatorNote}`);
+		if (ctx.tags) {
+			const t = ctx.tags;
+			const parts = [t.theme, t.style, t.medium, t.palette, t.mood].filter(Boolean);
+			if (parts.length) ctxLines.push(`标签：${parts.join(' / ')}`);
+		}
+		const userText = ctxLines.length
+			? `请基于这张作品和以下已有元数据，生成解说词：\n${ctxLines.join('\n')}`
+			: '请基于这张作品生成解说词。';
+
+		const messages: ChatMessage[] = [
+			{ role: 'system', content: NARRATION_SYSTEM_PROMPT },
+			{
+				role: 'user',
+				content: [
+					{ type: 'image_url', image_url: { url: dataUrl } },
+					{ type: 'text', text: userText },
+				],
+			},
+		];
+		const { content } = await stepChat(messages);
+		const text = (content || '').trim().replace(/^["「『]+|["」』]+$/g, '');
+		if (!text) return { ok: false, error: '模型没有返回解说词' };
+		return { ok: true, text, ms: Math.round(performance.now() - t0) };
+	} catch (e) {
+		return { ok: false, error: (e as Error).message };
+	}
+}

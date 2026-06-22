@@ -488,3 +488,81 @@ export function srcSet(_entry: PhotoEntry): string {
 	// Supabase Free 不带 image transformations，无法生成多尺寸 srcset
 	return '';
 }
+
+/* ---------- 解说音频 (M3) ---------- */
+
+/**
+ * 把合成好的 mp3 上传到 audio bucket,路径 narrations/<artist>/<photoId>.mp3
+ * 返回 storage path,供 photos 行的 narration_path 字段写入。
+ */
+export async function uploadNarrationMp3(
+	mp3: Blob,
+	artistSlug: string,
+	photoId: string,
+): Promise<string> {
+	const path = `narrations/${artistSlug}/${photoId}.mp3`;
+	if (getMode() === 'mock') {
+		return `mock://${path}`;
+	}
+	const url = `${cfg.url}/storage/v1/object/audio/${path}`;
+	const res = await fetch(url, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${cfg.anonKey}`,
+			apikey: cfg.anonKey,
+			'Content-Type': mp3.type || 'audio/mpeg',
+			'x-upsert': 'true',
+		},
+		body: mp3,
+	});
+	if (!res.ok) {
+		let msg = `HTTP ${res.status}`;
+		try {
+			const j = await res.json();
+			msg = j?.error || j?.message || msg;
+		} catch {
+			/* keep */
+		}
+		throw new Error(`解说音频上传失败: ${msg}`);
+	}
+	return path;
+}
+
+/** 把生成好的解说词与 mp3 路径写回 photos 行(M3 发布末步)。 */
+export async function setNarration(
+	photoId: string,
+	narrationText: string,
+	narrationPath: string,
+): Promise<void> {
+	if (getMode() === 'mock') {
+		// mock: 把字段写回 localStorage 中对应的上传记录
+		try {
+			const raw = localStorage.getItem(MOCK_UPLOAD_KEY);
+			if (!raw) return;
+			const arr: PhotoEntry[] = JSON.parse(raw);
+			const idx = arr.findIndex((p) => p.id === photoId);
+			if (idx >= 0) {
+				arr[idx].narrationText = narrationText;
+				arr[idx].narrationPath = narrationPath;
+				localStorage.setItem(MOCK_UPLOAD_KEY, JSON.stringify(arr));
+			}
+		} catch {
+			/* ignore */
+		}
+		return;
+	}
+	const sb = getClient();
+	const { error } = await sb
+		.from('photos')
+		.update({ narration_text: narrationText, narration_path: narrationPath })
+		.eq('id', photoId);
+	if (error) throw new Error(`写回解说词失败: ${error.message}`);
+}
+
+/** 把 audio bucket 里的解说 mp3 拼成公开播放 URL(访客侧零 Key 消费)。 */
+export function narrationUrl(entry: PhotoEntry): string {
+	const p = entry.narrationPath;
+	if (!p) return '';
+	if (p.startsWith('mock://')) return ''; // mock 走不出本机
+	return `${cfg.url}/storage/v1/object/public/audio/${p}`;
+}

@@ -230,3 +230,54 @@ export async function setArtistVoice(input: {
 		.eq('slug', input.slug);
 	if (error) throw new Error(`setArtistVoice 失败: ${error.message}`);
 }
+
+/* ---------- 音色样本: audio bucket 上传 ---------- */
+
+/**
+ * 把艺术家的音色样本(5~10s wav/mp3)上传到 audio bucket 的
+ * `voice-samples/<slug>.<ext>`,返回 storage path。
+ *
+ * mock 模式下不上传(无后端),直接生成一个虚拟路径,UI 用 ObjectURL 自己播放。
+ */
+export async function uploadVoiceSample(
+	slug: string,
+	audio: Blob,
+	ext = 'wav',
+): Promise<string> {
+	if (!slug) throw new Error('slug 必填');
+	const cleanExt = ext.toLowerCase().replace(/[^a-z0-9]/g, '') || 'wav';
+	const path = `voice-samples/${slug}.${cleanExt}`;
+	if (!isLive()) {
+		// mock: 不实际上传,UI 用本地 ObjectURL 播放即可
+		return `mock://${path}`;
+	}
+	const url = `${cfg.url}/storage/v1/object/audio/${path}`;
+	const res = await fetch(url, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${cfg.anonKey}`,
+			apikey: cfg.anonKey,
+			'Content-Type': audio.type || 'audio/wav',
+			'x-upsert': 'true',
+		},
+		body: audio,
+	});
+	if (!res.ok) {
+		let msg = `HTTP ${res.status}`;
+		try {
+			const j = await res.json();
+			msg = j?.error || j?.message || msg;
+		} catch {
+			/* keep */
+		}
+		throw new Error(`音色样本上传失败: ${msg}`);
+	}
+	return path;
+}
+
+/** 给前端拼一个公开播放 URL(audio bucket 已设 public=true)。 */
+export function audioPublicUrl(storagePath: string): string {
+	if (!storagePath) return '';
+	if (storagePath.startsWith('mock://')) return ''; // mock 用 ObjectURL,不走这里
+	return `${cfg.url}/storage/v1/object/public/audio/${storagePath}`;
+}
