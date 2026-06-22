@@ -1,5 +1,13 @@
 ---
 import WizardLayout from '../../layouts/WizardLayout.astro';
+
+/**
+ * 唯一一份提示词文本 —— 同时:
+ *   1. 显示给用户朗读
+ *   2. 作为 text 参数传给 /v1/audio/voices,让 StepFun 的 ASR 校验通过
+ * 两边不一致 → API 抛 CER_NOT_PASS,前面就栽过一次
+ */
+const VOICE_PROMPT = '如果你听到我的声音,说明你正在看我的作品。慢慢看,慢慢听。';
 ---
 
 <WizardLayout
@@ -7,7 +15,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 	title="你的声音"
 	subtitle="对着麦克风朗读下面这句话,Step 的 step-tts-2 模型会用它克隆你的音色 — 之后每张作品都会用你的声音自动讲解。这一步必填。"
 >
-	<div x-data="voicePage()" x-init="init()" class="space-y-6">
+	<div x-data="voicePage()" x-init="init()" class="space-y-6" data-voice-prompt={VOICE_PROMPT}>
 		<!-- 提示词 -->
 		<section
 			class="p-5 bg-gray-50 border-l-4 border-violet-400 rounded-r"
@@ -15,7 +23,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 		>
 			<p class="text-xs text-gray-500 mb-2">请朗读 ↓</p>
 			<p class="text-lg md:text-xl leading-relaxed text-gray-800">
-				「如果你听到我的声音,说明你正在看我的作品。慢慢看,慢慢听。」
+				「<span x-text="prompt"></span>」
 			</p>
 			<p class="text-xs text-gray-400 mt-3">约 6~8 秒 · 自然语速 · 不要刻意</p>
 		</section>
@@ -152,6 +160,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 
 		function voicePage() {
 			return {
+				prompt: '',
 				artistSlug: '',
 				artistName: '',
 				artistContact: '',
@@ -195,6 +204,8 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 						location.replace(stepHref(base, gate));
 						return;
 					}
+					// 从 DOM dataset 读那份唯一提示词,跟传给 API 的字符串保持一致
+					this.prompt = this.$root?.dataset?.voicePrompt || '';
 					const id = getIdentity();
 					this.artistSlug = id.artistSlug;
 					this.artistName = id.artistName;
@@ -329,7 +340,14 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 						this.voiceError = `上传失败: ${up.error}`;
 						return;
 					}
-					const cl = await cloneVoice({ fileId: up.fileId });
+					const cl = await cloneVoice({
+						fileId: up.fileId,
+						// 关键: 必须把用户朗读的提示词传过去 ——
+						// StepFun 服务端对录音跑 ASR,用 text 字段做 CER 校验,
+						// 两者不匹配会直接拒(CER_NOT_PASS)
+						text: this.prompt,
+						sampleText: this.prompt,
+					});
 					if (!cl.ok) {
 						this.voiceState = 'error';
 						this.voiceError = `复刻失败: ${cl.error}`;
