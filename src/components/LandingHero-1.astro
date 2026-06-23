@@ -1,46 +1,37 @@
 ---
-import siteConfig from '../../site.config.mjs';
-
-const title = siteConfig.title;
-const base = import.meta.env.BASE_URL;
+// 精简 hero:只留小副标 + H1 + 向下滚的引导,
+// 原按钮 / 副标段已删,FeaturedWorkScroll 在 section 底部还有一个更显眼的滚按钮
 ---
 
 <div class="absolute left-0 right-0 z-0">
 	<div class="text-center mb-12 relative z-10 px-4">
 		<p class="text-xs md:text-sm text-violet-600 font-medium tracking-widest uppercase mb-3">
-			{title} · 艺术家驻地线上展厅
+			艺术家驻地线上展厅
 		</p>
 		<h1 class="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight tracking-tight">
 			你的作品集,
 			<br class="hidden md:block" />
 			你的线上展厅
 		</h1>
-		<p
-			class="mt-5 text-base md:text-lg text-gray-600 max-w-xl mx-auto leading-relaxed"
-		>
-			几分钟时间,把你的作品上传到候鸟 300。AI 帮你打理标题、描述与策展短评,
-			你拿到一个专属 URL,发给任何想看的人。
-		</p>
 
-		<div class="mt-10 flex flex-wrap items-center justify-center gap-3">
-			<a
-				href=`${base}/upload`
-				class="inline-block px-7 py-3 rounded-md bg-black text-white font-medium
-                      hover:bg-violet-600 transition-all duration-300
-                      text-sm md:text-base
-                      transform hover:scale-105 active:scale-95"
+		<!-- 引导提示:微动的下箭头 + 文案,鼓励用户先往下浏览;
+		     底部 FeaturedWorkScroll 还有一个更显眼的滚动按钮兜底 -->
+		<div class="mt-12 flex flex-col items-center gap-2 text-gray-400">
+			<span class="text-xs md:text-sm">往下看看大家的作品</span>
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				width="22"
+				height="22"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				class="animate-bounce"
 			>
-				开始建我的页面 →
-			</a>
-			<a
-				href=`${base}/artists`
-				class="inline-block px-7 py-3 rounded-md border-2 border-black text-black font-medium
-                      hover:bg-black hover:text-white transition-all duration-300
-                      text-sm md:text-base
-                      transform hover:scale-105 active:scale-95"
-			>
-				看看别人 →
-			</a>
+				<polyline points="6 9 12 15 18 9"></polyline>
+			</svg>
 		</div>
 	</div>
 </div>
