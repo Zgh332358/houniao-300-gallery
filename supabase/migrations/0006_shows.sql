@@ -20,7 +20,7 @@ create table if not exists public.shows (
   title       text not null default '',
   layout      text not null check (layout in ('coverflow','cards','snap')),
   -- photos.id 数组,数组顺序 = 展示先后顺序
-  photo_ids   uuid[] not null default '{}'::uuid[],
+  photo_ids   uuid[] not null default array[]::uuid[],
   created_at  timestamptz not null default now()
 );
 
