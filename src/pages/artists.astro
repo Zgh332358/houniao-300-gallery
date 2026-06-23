@@ -63,9 +63,13 @@ const base = import.meta.env.BASE_URL;
 	function artistsListPage() {
 		return {
 			loading: true,
+			base: '',
 			artists: [] as { slug: string; name: string; photoCount: number; coverUrl: string }[],
 
 			async init() {
+				// Alpine 模板里裸用 `${base}` 默认是 scope 里的 base 字段;
+				// 不设这个字段 → 模板渲染 undefined → href 变成 "undefined/aiken/" → 404
+				this.base = (document.documentElement.dataset.base || '').replace(/\/+$/, '');
 				const all = await listAll();
 				this.artists = groupByArtist(all).map((a) => ({
 					slug: a.slug,

@@ -89,11 +89,13 @@ const base = import.meta.env.BASE_URL;
 	function collectionsPage() {
 		return {
 			loading: true,
+			base: '',
 			allPhotos: [] as PhotoEntry[],
 			collections: [] as { slug: string; name: string; count: number }[],
 			activeColl: null as string | null,
 
 			async init() {
+				this.base = (document.documentElement.dataset.base || '').replace(/\/+$/, '');
 				const all = await listAll();
 				this.allPhotos = all;
 				const groups = groupByCollection(all);

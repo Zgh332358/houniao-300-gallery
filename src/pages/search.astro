@@ -41,7 +41,7 @@ const base = import.meta.env.BASE_URL;
 					class="text-xs text-amber-700 mt-2"
 				>
 					未填 Step API Key,会走关键词降级搜索;在
-					<a :href="`${base}upload/`" class="underline">/upload</a>
+					<a :href="`${base}/upload/`" class="underline">/upload</a>
 					顶部「AI 助手」处填入,搜索精度更高。
 				</p>
 			</form>
@@ -70,7 +70,7 @@ const base = import.meta.env.BASE_URL;
 					<div class="grid grid-cols-2 md:grid-cols-3 gap-4">
 						<template x-for="p in results" :key="p.id">
 							<a
-								:href="`${base}${p.artistSlug}/`"
+								:href="`${base}/${p.artistSlug}/`"
 								class="block group"
 							>
 								<div class="aspect-square bg-gray-100 overflow-hidden rounded-lg">
@@ -116,6 +116,7 @@ const base = import.meta.env.BASE_URL;
 			query: '',
 			busy: false,
 			ranAt: 0,
+			base: '',
 			results: [] as ResultItem[],
 			usedFallback: false,
 			errorMsg: '',
@@ -123,6 +124,7 @@ const base = import.meta.env.BASE_URL;
 			_all: [] as PhotoEntry[],
 
 			async init() {
+				this.base = (document.documentElement.dataset.base || '').replace(/\/+$/, '');
 				this.aiOn = hasAiKey();
 				this._all = await listAll();
 				// 支持从其他页带 ?q=xxx 进来

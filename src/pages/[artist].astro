@@ -105,12 +105,14 @@ export async function getStaticPaths() {
 		return {
 			loading: true,
 			slug: '',
+			base: '',
 			photos: [] as PhotoEntry[],
 			collections: [] as { slug: string; name: string }[],
 			activeColl: null as string | null,
 			artistName: '',
 
 			async init() {
+				this.base = (document.documentElement.dataset.base || '').replace(/\/+$/, '');
 				this.slug = parseArtistSlugFromUrl();
 				if (!this.slug) {
 					this.loading = false;
