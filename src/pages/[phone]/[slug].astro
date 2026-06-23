@@ -48,9 +48,14 @@ export async function getStaticPaths() {
 							<span x-text="photos.length"></span> 张作品 ·
 							<span x-text="collections.length"></span> 个作品集
 						</p>
-						<p class="text-xs text-gray-400 mt-2 font-mono">
-							<span x-text="phoneHash8"></span> · <span x-text="`/${slug}/`"></span>
-						</p>
+						<!-- 联系方式:只在自己看自己的画廊时露(contact 是私密信息,
+						     从本机 localStorage 的 identity 里读,不走任何匿名接口) -->
+						<template x-if="isOwner && ownerContact">
+							<p class="text-xs text-gray-500 mt-2">
+								<span class="text-gray-400">📮 联系方式:</span>
+								<span class="font-medium text-gray-700" x-text="ownerContact"></span>
+							</p>
+						</template>
 
 						<!-- owner 胶囊 -->
 						<template x-if="isOwner">
@@ -338,6 +343,7 @@ export async function getStaticPaths() {
 	} from '../../lib/photos';
 	import { setupGallery, teardownGallery } from '../../scripts/photo-grid';
 	import { getSession, phoneHash } from '../../lib/auth';
+	import { getIdentity } from '../../lib/wizard';
 	import {
 		listShows,
 		getShow,
@@ -377,6 +383,7 @@ export async function getStaticPaths() {
 			activeColl: null as string | null,
 			artistName: '',
 			isOwner: false,
+			ownerContact: '',  // owner 模式时露的私密联系方式,从本机 localStorage 的 identity 读
 			editMode: false,
 
 			// shows
@@ -435,6 +442,10 @@ export async function getStaticPaths() {
 						try {
 							const myFull = await phoneHash(session.phone);
 							this.isOwner = myFull === mine[0].ownerHash;
+							// 是 owner → 从本机 localStorage 的 identity 拿自己填过的 contact 来露
+							if (this.isOwner) {
+								this.ownerContact = getIdentity().artistContact || '';
+							}
 						} catch {
 							this.isOwner = false;
 						}

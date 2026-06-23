@@ -1,269 +1,284 @@
-# 候鸟 300 · AI 语音艺术家展廊
+# 候鸟 300 · 艺术家驻地线上展厅
 
-> 让每位艺术家用自己**克隆的声音**,配合 AI 自动写的解说词,**自动语音导览**自己的作品。
-> 双语文案 / 一句话检索 / 内容审核全由 StepFun 多模态模型支撑。访客侧零 Key,只播放预生成的 mp3。
+> **一个手机号 = 一个画廊**。AI 自动写元数据、识图、检索、做 3 种动态展示。
+> 静态 Astro 站点 + Supabase 后端 + StepFun step-3.7-flash 当 AI 大脑,纯 BYOK 直连,部署到 GitHub Pages。
 
-灵魂功能:**艺术家声音克隆 + AI 解说词 → 展示时自动语音介绍画作**。其余 AI 能力围绕它服务。
-
-纯静态站点,部署到 GitHub Pages;运行时数据托管 [Supabase](https://supabase.com)(Postgres + Storage 免费额度 500MB / 1GB / 2GB)。
+线上:[zgh332358.github.io/houniao-300-gallery](https://zgh332358.github.io/houniao-300-gallery/)
 
 ---
 
-## ✨ 特性
+## ✨ 一句话产品
 
-- **🎙️ 声音克隆 + 自动语音导览(灵魂)**:艺术家就地录 5~10s 授权样本,StepFun `stepaudio-2.5-tts` 克隆音色;发布作品时 AI 写 1~3 句解说词,自动合成该艺术家声音的 mp3;访客侧零 Key 直接听,可一键自动顺序导览
-- **6 步引导式上传向导**:`/upload/setup → identity → voice → collection → photos → publish`,每步一页,顶部 sticky 进度条,前置不全自动跳回;每页有进场/离场动画
-- **✨ AI 作品助手(BYOK)**:用户先自己写中文标题和描述,**主动**点「AI 识图」让 `step-3.7-flash` 给一版独立草稿(中英标题/描述/五维标签/策展短评 + 内容审核),「采用」按钮一键复制到自己字段;聊天框专改 AI 草稿不动用户原稿
-- **🔍 自然语言找作品**:`/search` 一句话描述就给结果,模型不可用时降级到关键词匹配
-- **就地录音**:浏览器 MediaRecorder + Web Audio 内置转 WAV(无依赖)→ 直接走 StepFun `/v1/files` 上传;不用让艺术家自己准备录音文件
-- **多设备同步**:Supabase 后端统一存储,任何设备打开都能看到
-- **隐私优先**:联系方式从设计上就不进任何匿名可读路径(RLS + 列级 SELECT 双保险)
-- **BYOK 安全**:StepFun API Key 永远只存艺术家本机 `localStorage`,不入仓库、不进 URL、不经过服务器
-- **内置 mock 模式**:未配置 Supabase 时自动用 23 张种子图演示 UI,纯前端跑得动
+驻地艺术家用手机号「轻登录」拿一个 `/<phoneHash8>/<slug>/` 专属画廊页 → 上传作品时 step-3.7-flash 同时识图、写双语标题描述、打 5 维标签、给策展短评 → 发出 URL 让人浏览 → 还能挑几张图绑一种动态布局(3D 旋转 / 堆叠卡片 / 全屏 scroll-snap)做成独立可分享的「动态展示」。
 
 ---
 
-## 🗺️ 上传向导(用户视角)
+## 🎯 核心功能
 
-| 步骤 | 路由 | 干什么 |
+### 身份与登录(荣誉系统)
+- **手机号轻登录**:输手机号即可,无 SMS、无 PIN。客户端 SHA-256(phone + salt) 后送 DB,**明文手机号永远不出浏览器**
+- **复合身份 URL**:`/<phoneHash8>/<slug>/`,前 8 位 hash + slug 联合唯一,两个艺术家都叫 Given 互不干扰
+- **owner 模式自动识别**:登录手机号的完整 hash 跟当前画廊匹配,才显示编辑按钮
+
+### 上传向导(5 步)
+| 步 | 路由 | 干啥 |
 |---|---|---|
-| ① AI 助手设置 | `/upload/setup/` | 粘贴 StepFun API Key + 选多模态模型(默认 `step-3.7-flash`) |
-| ② 你是谁 | `/upload/identity/` | 显示名 + 联系方式(私) → 自动生成 slug |
-| ③ 你的声音 | `/upload/voice/` | 朗读固定提示词 → 浏览器录音 → 转 WAV → 克隆 → 试听确认 |
-| ④ 作品集 | `/upload/collection/` | 起一个集子名 |
-| ⑤ 选图 + AI 文案 | `/upload/photos/` | 拖图,自己写标题/描述,点 AI 识图拿建议,聊天改 AI 草稿,采用回自己字段 |
-| ⑥ 发布 | `/upload/publish/` | 一键发布:上传图 + 写元数据 + 生成解说词 + 合成 mp3 + 写回 |
+| ① AI 助手设置 | `/upload/setup/` | 粘 StepFun API Key(只存本机 localStorage),模型锁死 `step-3.7-flash` |
+| ② 你是谁 | `/upload/identity/` | 显示名 + 联系方式 + slug;首次注册点「创建画廊」绑 phone_hash |
+| ③ 作品集 | `/upload/collection/` | 起作品集名 |
+| ④ 选图 + AI 文案 | `/upload/photos/` | 拖图 → AI 识图 → 用户与 AI 对话改草稿 → 「采用」回自己字段 |
+| ⑤ 发布 | `/upload/publish/` | 一键上传:图 → Storage,元数据 → photos 表 |
 
-老 `/upload/` 自动跳转到 `/upload/setup/`。
+### AI 能力(全 step-3.7-flash 驱动)
+- **🖼️ 识图 → 元数据**(`analyzePhoto`):一次请求返回中英文标题、中英文描述、5 维标签(主题/风格/媒介/色调/情绪)、策展短评、内容审核结果
+- **💬 对话改稿**(`chatRevise`):用户在 AI 草稿旁边对话,模型只改自己的草稿不动用户原稿
+- **🔮 自然语言找作品**(`searchByQuery`):一句话描述(主题/情绪/色调/媒介自由组合),模型按全量作品的元数据排出 ids,无 key 时降级关键词
+- **🏷️ 标签云**:全站所有 photos.tags 聚合后,按 5 维分行展示,点了直接搜
 
----
+### 画廊与展示
+- **画廊页** `/<hash8>/<slug>/`:justified-layout 瀑布流 + GLightbox 灯箱,每张图右下 title 角标
+- **「动态展示」section**:画廊页头部下方独立卡片网格,封面图 + emoji + 标题 + 张数
+- **三种 layout** (单 URL 沉浸式)
+  - 🎞️ **Coverflow**:Swiper 3D 旋转木马,中央正放两侧 28° 后倾
+  - 🃏 **Cards**:Swiper Tinder 风格发牌切换
+  - 📜 **Snap**:纯 CSS scroll-snap-y mandatory + IntersectionObserver fade-in
+- **show URL** `/<hash8>/<slug>/show/<id>/`:全屏,顶部黑条只剩「← 回画廊 / 标题 / 元信息」,nav 自动隐藏
 
-## 🚀 快速上手
+### Owner 编辑模式
+- 自己画廊页右上「编辑模式」开关 → 开启后:
+  - 每张图右上 ×:删图(级联自动从所有 show 的 photo_ids 里抹掉,空 show 自动删)
+  - 每张 show 卡的标题变 input(blur 自动保存 PATCH title),右上 ×:删 show
+  - 头部「+ 创建动态展示」按钮 → 打开 modal 多选图 + 选 layout
 
-### 1. 新建 Supabase 项目
-
-[supabase.com](https://supabase.com) → Start your project,推荐 GitHub 登录最快。
-
-**New project**:
-- Name 随意
-- Region 选 **Singapore (Southeast Asia)**(国内访问最快)
-- Plan **Free**
-
-等 ~2 分钟,状态变成 "Project is ready"。
-
-### 2. 初始化数据库
-
-控制台 **SQL Editor** → **New query**:
-
-#### 2.1 基础表(粘下面整段执行)
-
-```sql
--- photos 元数据表 + photos bucket + 公共读写策略
-create extension if not exists "pgcrypto";
-
-create table if not exists public.photos (
-  id uuid primary key default gen_random_uuid(),
-  artist_slug text not null,
-  artist_name text not null,
-  artist_contact text not null,
-  collection_slug text not null,
-  collection_name text not null,
-  title text default '',
-  description text default '',
-  storage_path text not null,
-  width int not null,
-  height int not null,
-  format text not null,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists photos_artist_idx on public.photos(artist_slug);
-create index if not exists photos_created_at_idx on public.photos(created_at desc);
-
-alter table public.photos enable row level security;
-drop policy if exists "anyone can read photos" on public.photos;
-create policy "anyone can read photos" on public.photos for select using (true);
-drop policy if exists "anyone can insert photos" on public.photos;
-create policy "anyone can insert photos" on public.photos for insert with check (true);
-
-insert into storage.buckets (id, name, public) values ('photos', 'photos', true)
-  on conflict (id) do update set public = true;
-
-drop policy if exists "anyone can read photos bucket" on storage.objects;
-create policy "anyone can read photos bucket"
-  on storage.objects for select using (bucket_id = 'photos');
-drop policy if exists "anyone can upload to photos bucket" on storage.objects;
-create policy "anyone can upload to photos bucket"
-  on storage.objects for insert with check (bucket_id = 'photos');
-```
-
-#### 2.2 声音克隆 + 双语 + AI 字段(migration 0001,必须)
-
-把 [`supabase/migrations/0001_artists_voice_artworks.sql`](supabase/migrations/0001_artists_voice_artworks.sql) 全文粘进 SQL Editor 执行 —— 加 `artists` 表、`audio` bucket、`photos` 加双语/解说/审核列、RLS 把 contact 关进黑屋。
-
-**不跑这一步,声音克隆登记后无法落库、发布时解说 mp3 没地方放**。
-
-详见 [`supabase/migrations/README.md`](supabase/migrations/README.md)。
-
-### 3. 拿凭证 + 填配置
-
-控制台齿轮 **Project Settings → API**,复制:
-
-- **Project URL**:`https://xxxxxxxx.supabase.co`
-- **Project API keys → anon public**:一长串 JWT
-
-> ⚠️ 不要复制 **service_role**(root 权限,绝不能进前端)。anon key 设计上前端公开安全。
-
-编辑 [`site.config.mts`](site.config.mts):
-
-```ts
-supabase: {
-  url: 'https://xxxxxxxx.supabase.co',
-  anonKey: 'eyJhbGciOi...',
-  bucket: 'photos',
-}
-```
-
-### 4. 跑起来
-
-```bash
-npm install
-npm run dev
-# http://localhost:4321/houniao-300-gallery/
-```
-
-部署到 GitHub Pages:`git push` 后 `.github/workflows/deploy.yml` 自动构建+发布。
-
----
-
-## 🧠 AI 调用链路(BYOK 直连,无后端)
-
-StepFun 三个端点对浏览器开放 CORS,前端直接用艺术家自己的 key 调,**不经过我们任何服务器**。
-
-| 用途 | Endpoint | 模型 |
-|---|---|---|
-| 读图 / 文案 / 对话 / 审核 / 检索 | `https://api.stepfun.com/step_plan/v1/chat/completions` | `step-3.7-flash`(默认,可改) |
-| 上传音色样本 | `https://api.stepfun.com/v1/files` | — |
-| 音色克隆 | `https://api.stepfun.com/v1/audio/voices` | `stepaudio-2.5-tts`(**写死**) |
-| 语音合成 | `https://api.stepfun.com/v1/audio/speech` | `stepaudio-2.5-tts`(**写死**) |
-
-- Key 只存艺术家本机 `localStorage`(key `pf:step-key:v1`),不写入仓库、不进 URL
-- 多模态模型默认 `step-3.7-flash`,可在 `/upload/setup/` 改为其它视觉模型(`localStorage` key `pf:step-model:v1`)
-- 语音模型固定 `stepaudio-2.5-tts`,克隆 + 合成同一个;克隆时把朗读提示词原文也传 `text` 字段,服务端 ASR 校验避免 CER_NOT_PASS
-- chat 请求体带 `reasoning_effort: "minimal"`,跳过 reasoning 链,识图从 8~15s 降到 2~4s
-
-全部逻辑在两个文件:
-- [`src/lib/ai.ts`](src/lib/ai.ts):`analyzePhoto` / `chatRevise` / `generateNarrationText` / `searchByQuery`
-- [`src/lib/ai-voice.ts`](src/lib/ai-voice.ts):`uploadVoiceSample` / `cloneVoice` / `synthesizeSpeech`
+### 首页
+- **流动 marquee**:最新 24 张图横向无限滚,鼠标悬停暂停
+- **5 步流程预览**(已被压成 4 步,匹配当前 wizard)
+- 顶部 hero:`艺术家驻地线上展厅` + H1 + 微动 ⌄ 引导滚动
 
 ---
 
 ## 🏗 架构
 
 ```
-┌───────────────────────────────────────────────────────────┐
-│ 浏览器(纯静态)                                            │
-│                                                             │
-│   /upload/setup     ┐                                       │
-│   /upload/identity  │                                       │
-│   /upload/voice     │  Wizard:localStorage + IndexedDB     │
-│   /upload/collection│  跨页面状态,刷新不丢                  │
-│   /upload/photos    │                                       │
-│   /upload/publish   ┘                                       │
-│       │                                                     │
-│       ├── BYOK key(localStorage)                          │
-│       │                                                     │
-└───────┼─────────────────────────────────────────────────────┘
-        │
-        │ XHR/fetch                  Authorization: Bearer <用户的 key>
-        │
-        ▼
-┌────────────────────────┐  ┌─────────────────────────────┐
-│ Supabase               │  │ StepFun API                  │
-│ - photos / artists 表   │  │ - chat/completions(读图,    │
-│ - photos / audio bucket│  │   文案,审核,检索,生解说词)  │
-│ - RLS + 公开视图        │  │ - audio/voices(克隆)         │
-└────────────────────────┘  │ - audio/speech(合成 mp3)     │
-                            │ - files(音色样本上传)         │
-                            └─────────────────────────────┘
+浏览器(静态 Astro 站,纯前端)
+    │
+    ├── 用户的 StepFun key(只存 localStorage)
+    ├── 用户的手机号(SHA-256 hash 后才出浏览器)
+    │
+    ├── XHR/fetch ──► Supabase
+    │                  ├─ photos / artists / shows 表 (RLS + 公开视图)
+    │                  └─ photos Storage bucket (公开读)
+    │
+    └── fetch ──► api.stepfun.com/step_plan/v1/chat/completions
+                   step-3.7-flash 多模态(读图/写文案/对话/审核/检索)
 ```
 
-访客侧浏览展廊:`/`, `/artists/`, `/<slug>/`, `/search/`, `/about/` —— 零 Key,只从 Supabase 公开视图读 + 播放预生成 mp3。
+**没有自家后端** —— GitHub Pages 只 host 静态 HTML/JS/CSS。所有动态都靠 Supabase + StepFun BYOK 直连。
 
 ---
 
-## 🗂 目录速览
+## 🌐 URL 结构
+
+```
+/                                  首页(marquee + 4 步流程 + 已上线 artists)
+/artists/                          所有艺术家卡片
+/collections/                      所有作品集
+/search/                           自然语言找作品(Step 3.7 + 标签云 + 示例)
+/about/                            关于
+/login/                            手机号登录入口
+/upload/                           → redirect /login/ → /upload/setup/
+/upload/{setup,identity,collection,photos,publish}/  上传向导 5 步
+/<phoneHash8>/<slug>/              艺术家画廊页
+/<phoneHash8>/<slug>/show/<id>/    全屏动态展示
+```
+
+非 Astro 静态路径(`<hash8>/<slug>/...`)走 GitHub Pages 全站 `404.html` fallback,客户端 JS 解析 path 后渲染。
+
+---
+
+## 🚀 快速上手
+
+### 1. 新 Supabase 项目
+
+[supabase.com](https://supabase.com) → New project → 区域选 Singapore(国内最快)→ Free plan。
+
+### 2. 跑 8 条 migration
+
+按顺序去 SQL Editor 跑(每条都在 `supabase/migrations/` 下):
+
+| migration | 干啥 |
+|---|---|
+| `0001_artists_voice_artworks.sql` | 建 artists 表 + 加 photos 双语/标签等列(其中 audio bucket / voice 字段是历史遗留,现在死字段,不影响) |
+| `0002_photos_update_narration.sql` | 给 photos 表加 UPDATE policy(历史遗留为了写 narration_*,后来 TTS 拆了,policy 留着不影响) |
+| `0003_artists_phone_login.sql` | 加 `phone_hash` + `artists_login_lookup` 视图,登录靠它 |
+| `0004_photos_delete_policy.sql` | anon DELETE photos + storage 文件,owner 模式删图必需 |
+| `0005_composite_identity.sql` | photos 加 `owner_hash`、artists 改成 (phone_hash, slug) 联合唯一,URL 才能撑住两个同名 Given |
+| `0006_shows.sql` | 新建 shows 表 + SELECT/INSERT/DELETE policy |
+| `0007_shows_rename.sql` | shows 加 UPDATE policy 但只放行 title 列 |
+| `0008_shows_cascade_photo_delete.sql` | photos AFTER DELETE 触发器,自动从 shows.photo_ids 抹掉 + 删空 show |
+
+### 3. 填配置
+
+复制 Project URL + anon key 到 [`site.config.mts`](site.config.mts):
+
+```ts
+supabase: {
+  url: 'https://xxxxxxxx.supabase.co',
+  anonKey: 'eyJhbG...',
+  bucket: 'photos',
+}
+```
+
+⚠️ 永远不要把 service_role key 写进任何前端代码 / 仓库。anon key 设计上前端公开是安全的。
+
+### 4. 跑起来
+
+```bash
+npm install
+npm run dev          # http://localhost:4321/houniao-300-gallery/
+npm run build        # 静态产物到 dist/
+```
+
+部署:`git push origin main` → GitHub Pages 自动构建。
+
+### 5. (可选) seed demo 数据
+
+`scripts/seed-demo-photos.mjs` 一次性把 4 位虚构艺术家 + 20 张 CC0 摄影图灌进去(虚拟 US 号 15555550101~04):
+
+```bash
+node scripts/seed-demo-photos.mjs              # 检测后跑
+node scripts/seed-demo-photos.mjs --dry        # 只打印不写网
+node scripts/seed-demo-photos.mjs --force      # 强制重跑
+```
+
+---
+
+## 🧠 step-3.7-flash 在做什么
+
+| 用途 | 函数 | 模型调用 |
+|---|---|---|
+| 读图 → 元数据 | `analyzePhoto(file, history)` | 一次 chat,vision message,要求 JSON 输出含 title/titleEn/description/descriptionEn/tags(5 维)/curatorNote/moderation |
+| 对话改稿 | `chatRevise(history, userMsg)` | 多轮 chat,带历史 + 用户最新消息,只改 AI 已生成的草稿 |
+| 自然语言搜索 | `searchByQuery(q, all)` | 一次 chat,把全量作品摘要 + 用户 query 喂进去,要求 JSON `{ids: [...]}` 排序 |
+| 关键词降级 | `keywordFallbackSearch(q, all)` | 不调模型,纯前端字符串匹配,无 key 时兜底 |
+
+**端点**:`POST https://api.stepfun.com/step_plan/v1/chat/completions`
+
+**Request body 关键**:
+```js
+{
+  model: 'step-3.7-flash',
+  messages: [...],
+  reasoning_effort: 'minimal',   // 跳 reasoning 链,识图 8-15s → 2-4s
+  response_format: { type: 'json_object' },  // 强制 JSON
+}
+```
+
+完整实现:[`src/lib/ai.ts`](src/lib/ai.ts)
+
+---
+
+## 🔐 安全模型
+
+| 资源 | 强度 | 实现 |
+|---|---|---|
+| 手机号 | 不出浏览器 | 客户端 SHA-256(phone + 'houniao300-2026') 后再发请求 |
+| StepFun API Key | 不出 owner 浏览器 | 只存 `localStorage`,不进 URL / 仓库 / 任何服务器 |
+| 谁能改谁的画廊 | **荣誉系统** | RLS 全 `using (true)`,owner 判断只在客户端(session.phone hash === photos.owner_hash) |
+| 联系方式 | 物理隔离 | RLS + 列级 grant + `artists_public` 视图三重保护,匿名查不到 |
+| 同 slug 撞 | 复合 URL 隔离 | 两个 Given 拿不同 `/<hash8>/given/` |
+
+**强度边界**:跟 Supabase Auth phone OTP 比,我们没有服务端身份。理论上 anon 还能伪造 owner_hash 发图。真生产需要:
+- 接 Supabase Auth(phone OTP / magic link),用 `auth.uid()` 改写 RLS
+- 服务端校验 owner_hash = jwt 里的 hashed phone
+
+驻地展示规模(< 100 艺术家)目前不上这层。
+
+---
+
+## 📁 目录速览
 
 ```
 src/
-├── layouts/
-│   ├── MainLayout.astro          # 全站壳:NavBar + Footer(AI 合成披露)
-│   └── WizardLayout.astro        # 6 步向导壳:stepper + 内容 + 进出场动画
+├── layouts/MainLayout.astro    全站壳 + Alpine 启动
+├── layouts/WizardLayout.astro  上传向导壳:stepper + 动画
 ├── components/
-│   ├── NavBar.astro              # 顶部导航
-│   ├── Footer.astro              # 底部 + 社交链接 + AI 合成声明
-│   ├── UploadStepper.astro       # 向导 sticky 进度条
-│   ├── JourneyPreview.astro      # 首页 5 步流程预览
-│   ├── LandingHero-1.astro       # 首屏标题 + 两个 CTA
-│   ├── FeaturedGallery.astro     # 首页精选墙
-│   ├── FeaturedWorkScroll.astro  # 首屏向下滚动提示
-│   ├── PhotoGrid.astro           # 瀑布流容器
-│   └── SocialIcon.astro          # 小红书 / IG 图标
+│   ├── NavBar.astro              顶部导航(登录态自动显示「我的画廊」)
+│   ├── Footer.astro
+│   ├── LandingHero-1.astro       首屏 hero
+│   ├── FeaturedGallery.astro     首页 marquee
+│   ├── FeaturedWorkScroll.astro  首屏底部「向下浏览 ↓」
+│   ├── JourneyPreview.astro      4 步流程
+│   └── ...
 ├── lib/
-│   ├── ai.ts                     # 多模态 chat(读图/文案/对话/审核/检索)
-│   ├── ai-voice.ts               # 音色克隆 + 语音合成(stepaudio-2.5-tts)
-│   ├── wav.ts                    # 浏览器录音 → WAV 转码(无依赖)
-│   ├── wizard.ts                 # 上传向导状态:localStorage 文本 + IDB 图片
-│   ├── photos.ts                 # Supabase photos 表 + photos bucket + mock 数据
-│   └── artists.ts                # Supabase artists 表 + audio bucket(声音样本)
+│   ├── ai.ts                     step-3.7-flash 调用层
+│   ├── auth.ts                   手机号 hash + 会话
+│   ├── photos.ts                 Supabase photos 表 + Storage
+│   ├── artists.ts                Supabase artists 表 + login lookup
+│   ├── shows.ts                  Supabase shows 表 CRUD
+│   └── wizard.ts                 向导状态(localStorage + IndexedDB)
 ├── pages/
-│   ├── index.astro               # 首页
-│   ├── about.astro               # /about(AI 合成声明专章)
-│   ├── artists.astro             # 艺术家列表
-│   ├── collections/index.astro   # collection 聚合
-│   ├── search.astro              # 自然语言检索
-│   ├── [artist].astro            # /<slug>/(也作为 404 fallback)
-│   ├── upload.astro              # 老 /upload/ → 自动跳转 /upload/setup/
-│   └── upload/
-│       ├── setup.astro
-│       ├── identity.astro
-│       ├── voice.astro
-│       ├── collection.astro
-│       ├── photos.astro
-│       └── publish.astro
-├── scripts/photo-grid.ts         # justified-layout + GLightbox
+│   ├── index.astro               首页
+│   ├── login.astro               手机号登录
+│   ├── about.astro / artists.astro / collections/index.astro / search.astro
+│   ├── upload.astro              redirect → /login
+│   ├── upload/{setup,identity,collection,photos,publish}.astro
+│   └── [phone]/[slug].astro      画廊页 + show 页(URL 解析切模式)
+├── scripts/
+│   ├── photo-grid.ts             justified-layout + GLightbox
+│   └── show-viewers.ts           Swiper Coverflow / Cards + 纯 CSS Snap
 └── styles/global.css
 
-supabase/migrations/
-├── README.md                      # 怎么执行 + 文件清单
-└── 0001_artists_voice_artworks.sql # 声音 + 双语 + AI 字段
+supabase/migrations/             0001 ~ 0008
+scripts/
+├── seed-demo-photos.mjs         一次性灌 demo 数据
+└── postbuild.mjs                复制占位 → dist/404.html
 
-scripts/postbuild.mjs              # 复制 [artist] 壳 → dist/404.html
-.github/workflows/                 # deploy / test / quality CI
+docs/
+└── workshop-step-3.7-flash.md   workshop 教程
 ```
 
 ---
 
-## 🔒 合规与安全
+## 🛠 技术栈
 
-- **声音克隆**:仅克隆艺术家本人声音;UI 强制勾选授权,记录 `consent_at`;不允许克隆他人/名人/第三方
-- **AI 合成披露**:所有合成语音的播放处与 `/about` 标注「音频由 AI 合成」(Spec 强制 + StepFun 文档要求)
-- **API Key**:StepFun key 是会花钱的凭证 —— 永不入库、不入仓库、不进前端常量、不进 URL;只存触发调用那位用户的 `localStorage`
-- **联系方式**:不进任何匿名可读路径;RLS + 显式 SELECT 列 + `artists_public` 视图三重保护
-- **数据库变更**:只生成 [`supabase/migrations/*.sql`](supabase/migrations/),由人工到控制台执行,代码层面绝不直连库跑 SQL
+- [Astro 5](https://astro.build/) — 静态站点 + island 模式
+- [Tailwind CSS 4](https://tailwindcss.com/) — 工具类样式
+- [Alpine.js 3](https://alpinejs.dev/) — 轻量响应式
+- [Supabase](https://supabase.com/) — Postgres + Storage(免费)
+- [Swiper 11](https://swiperjs.com/) — Coverflow / Cards 动效
+- [GLightbox](https://biati-digital.github.io/glightbox/) — 灯箱
+- [justified-layout](https://github.com/flickr/justified-layout) — 瀑布流
+- [StepFun step-3.7-flash](https://platform.stepfun.com/) — 多模态 AI
+
+部署:GitHub Pages(免费)。
 
 ---
 
-## 🛠 已知限制
+## ⚠️ 已知限制
 
-- **无身份认证**:任何人可用任意 slug 上传,有伪冒可能。生产环境建议接 Supabase Auth 或加 PIN
-- **无在线删除**:anon 用户只能 INSERT。删除需到控制台手动
-- **dev 模式直链不工作**:`/artist-01/` 直链只在生产构建 + 404 fallback 后工作。dev 用 `?slug=artist-01` 测试
-- **Free tier 无图片转换**:Supabase Storage 转换属 Pro 功能,本站发原图(无 srcset)
-- **mock 模式声音不通**:mock 模式下音色样本和解说 mp3 不会真上传(没有 audio bucket),所以访客侧听不到。真要演示走通,跑完 migration 0001 后切到 live 模式
+- **没有真服务端 auth** —— 荣誉系统,详见上面安全段
+- **dev 模式直链不工作** —— `/<hash8>/<slug>/` 走 GH Pages 404 fallback,只有生产构建后能用。dev 用 `?phone=xxx&slug=yyy` query 测试
+- **GitHub Pages 大陆访问偶发不通** —— Cloudflare/Fastly 节点在大陆时通时不通
+- **Supabase Free 不带图片转换** —— `srcSet` 是空字符串,直返原图
+- **音色 / 解说功能已下线** —— 0001/0002 migration 里 narration_* / audio bucket / artists.voice_id 字段是历史遗留,死字段不动,前端已完全不引用
+
+---
+
+## 🗺 Migration 时间线(项目演化记录)
+
+- **M0** 静态 Astro 框架 + photos 表
+- **0001** 加 artists / audio bucket / 双语字段(那时候还想做 AI 语音导览,后来移除了)
+- **0002** photos UPDATE policy(为了写 narration_path,现在用来改 owner 字段)
+- **0003** phone_hash 登录
+- **0004** photos DELETE policy(owner 模式删图)
+- **0005** 复合身份 URL 重构
+- **0006** shows 表
+- **0007** shows rename(只放 title 列)
+- **0008** photos→shows 级联删除触发器
 
 ---
 
 ## 📄 License
 
-MIT。
+MIT
