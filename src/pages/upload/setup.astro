@@ -105,7 +105,12 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					}
 					const c = getAiConfig();
 					this.apiKey = c.apiKey;
-					this.model = c.model;
+					// 模型现在不可编辑,强制用 DEFAULT_MODEL 覆盖之前可能被改坏的
+					// localStorage 值(比如有用户在旧 input 里删字符变成 "step-3.7-flas")
+					this.model = DEFAULT_MODEL;
+					if (c.model !== DEFAULT_MODEL) {
+						setAiConfig({ model: DEFAULT_MODEL });
+					}
 					this.syncNext();
 					this.$watch('apiKey', () => this.syncNext());
 				},
