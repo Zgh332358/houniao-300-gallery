@@ -73,13 +73,10 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 
 			init() {
 				this.base = (document.documentElement.dataset.base || '/').replace(/\/+$/, '');
-				// 已经登录过 → 直接跳 wizard,不让他重新登录
+				// 已经登录过 → 直接进 AI 助手设置(后续步骤会自然引导回 identity 创建画廊)
 				const s = getSession();
 				if (s) {
-					const target = s.slug
-						? `${this.base}/upload/setup/`  // 已绑 slug,继续 wizard
-						: `${this.base}/upload/identity/`;  // 注册中途,继续注册
-					location.replace(target);
+					location.replace(`${this.base}/upload/setup/`);
 				}
 			},
 
@@ -97,20 +94,19 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 					const hash = await phoneHash(phone);
 					const artist = await findArtistByPhoneHash(hash);
 					if (artist) {
-						// 老用户:绑定的 slug 已存在,直接进编辑
+						// 老用户:绑定的 slug 已存在
 						setSession(phone, artist.slug);
-						this.hint = `欢迎回来 <strong>${artist.name}</strong> · 正在进入 <code>/${artist.slug}/</code> ...`;
-						setTimeout(() => {
-							location.replace(`${this.base}/upload/setup/`);
-						}, 600);
+						this.hint = `欢迎回来 <strong>${artist.name}</strong> · 进入 AI 助手设置...`;
 					} else {
-						// 新用户:slug 还没绑,先存 phone 进 session,跳到 identity 填名字 + 选 slug
+						// 新用户:slug 还没绑,session.slug 留空,后面 identity 步会触发创建
 						setSession(phone, '');
-						this.hint = '看起来你是第一次来 · 下一步为你创建画廊地址...';
-						setTimeout(() => {
-							location.replace(`${this.base}/upload/identity/`);
-						}, 600);
+						this.hint = '看起来你是第一次来 · 先配置 AI 助手,后面会引导你创建画廊...';
 					}
+					// 不管新老都先去 setup —— wizard 第一步是 API Key 配置,
+					// 没 key 后续什么都跑不动。setup → identity 时再分新老两态。
+					setTimeout(() => {
+						location.replace(`${this.base}/upload/setup/`);
+					}, 600);
 				} catch (e: any) {
 					this.error = e?.message || '查询失败,请稍后再试';
 					this.busy = false;
