@@ -393,6 +393,9 @@ export async function getStaticPaths() {
 					if (show && show.artistSlug === this.slug && show.ownerHash.startsWith(this.phoneHash8)) {
 						this.currentShow = show;
 						this.showMode = true;
+						// 给 body 加 class,CSS 用它隐藏顶部 NavBar(全局 nav z-index:50
+						// 会盖住 show-topbar 的「回到画廊」按钮 → 点击被拦截 + 视觉冲突)
+						document.body.classList.add('show-mode');
 						this.loading = false;
 						await this.$nextTick();
 						const container = document.getElementById('show-viewer');
@@ -605,6 +608,10 @@ export async function getStaticPaths() {
 </script>
 
 <style is:global>
+	/* ---------- show mode 全局接管:隐藏顶部 NavBar + 取消页面滚动 ---------- */
+	body.show-mode > nav { display: none !important; }
+	body.show-mode { overflow: hidden; }
+
 	/* ---------- Show 页通用容器 ---------- */
 	.show-page-wrap {
 		position: fixed;
