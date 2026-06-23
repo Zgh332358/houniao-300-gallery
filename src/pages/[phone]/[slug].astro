@@ -7,8 +7,8 @@ const base = import.meta.env.BASE_URL;
 
 export async function getStaticPaths() {
 	// 占位:phoneHash8 + slug 都未知,由 postbuild 把这个 HTML 复制成
-	// dist/404.html,所有 /<phoneHash8>/<slug>/ 路径都 fallback 到这里,
-	// 由客户端解析 URL 决定渲染哪位艺术家。
+	// dist/404.html。所有 /<phoneHash8>/<slug>/ 和 /<hash8>/<slug>/show/<id>/
+	// 路径都 fallback 到这里,由客户端 parseFromUrl 区分 gallery / show 模式。
 	return [{ params: { phone: '__phone__', slug: '__slug__' } }];
 }
 ---
@@ -27,8 +27,8 @@ export async function getStaticPaths() {
 				<div class="text-center py-20 text-gray-400">加载中…</div>
 			</template>
 
-			<!-- 找不到艺术家 -->
-			<template x-if="!loading && photos.length === 0">
+			<!-- 找不到艺术家 / show -->
+			<template x-if="!loading && photos.length === 0 && !currentShow">
 				<div class="text-center py-20">
 					<h1 class="text-3xl font-bold mb-4" x-text="`没找到「${slug}」`"></h1>
 					<p class="text-gray-600 mb-8">
@@ -38,8 +38,8 @@ export async function getStaticPaths() {
 				</div>
 			</template>
 
-			<!-- 正常展示 -->
-			<template x-if="!loading && photos.length > 0">
+			<!-- ============ Gallery mode ============ -->
+			<template x-if="!loading && !showMode && photos.length > 0">
 				<div>
 					<!-- 艺术家头部 -->
 					<header class="text-center mb-12">
@@ -51,11 +51,29 @@ export async function getStaticPaths() {
 						<p class="text-xs text-gray-400 mt-2 font-mono">
 							<span x-text="phoneHash8"></span> · <span x-text="`/${slug}/`"></span>
 						</p>
+
+						<!-- shows chip 列表(owner 和访客都看,如有) -->
+						<template x-if="showsList.length > 0">
+							<div class="mt-6 flex flex-wrap items-center justify-center gap-2">
+								<span class="text-xs text-gray-500">📺 动态展示:</span>
+								<template x-for="s in showsList" :key="s.id">
+									<a
+										:href="`${base}/${phoneHash8}/${slug}/show/${s.id}/`"
+										class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-100 text-violet-700 text-xs hover:bg-violet-200 transition-colors"
+									>
+										<span x-text="layoutEmoji(s.layout)"></span>
+										<span x-text="s.title || '未命名'"></span>
+										<span class="text-violet-400" x-text="`(${s.photoIds.length})`"></span>
+									</a>
+								</template>
+							</div>
+						</template>
+
+						<!-- owner 胶囊 -->
 						<template x-if="isOwner">
-							<div class="mt-4 inline-flex items-center gap-3 px-4 py-2 rounded-full bg-violet-50 border border-violet-200">
+							<div class="mt-4 inline-flex flex-wrap items-center justify-center gap-3 px-4 py-2 rounded-full bg-violet-50 border border-violet-200">
 								<span class="text-xs text-violet-700">这是你自己的画廊</span>
 								<span class="text-violet-300">|</span>
-								<!-- 编辑模式开关 -->
 								<button
 									type="button"
 									@click="toggleEditMode()"
@@ -71,8 +89,14 @@ export async function getStaticPaths() {
 											:class="editMode ? 'left-4' : 'left-0.5'"
 										></span>
 									</span>
-									<span x-text="editMode ? '编辑模式 (点图右上 × 删除)' : '编辑模式 (开启后才能删图)'"></span>
+									<span x-text="editMode ? '编辑模式 (点 × 删除)' : '编辑模式'"></span>
 								</button>
+								<span class="text-violet-300">|</span>
+								<button
+									type="button"
+									@click="openPicker()"
+									class="text-xs text-violet-700 hover:underline"
+								>+ 创建动态展示</button>
 								<span class="text-violet-300">|</span>
 								<a
 									:href="`${base}/upload/setup/`"
@@ -106,8 +130,7 @@ export async function getStaticPaths() {
 											: 'border-gray-200 text-gray-700 hover:border-gray-300'
 									"
 									x-text="c.name"
-								>
-								</button>
+								></button>
 							</template>
 						</div>
 					</div>
@@ -116,12 +139,132 @@ export async function getStaticPaths() {
 					<section
 						id="photo-grid"
 						class="relative w-full mx-auto overflow-hidden"
-					>
-					</section>
+					></section>
+				</div>
+			</template>
+
+			<!-- ============ Show mode ============ -->
+			<template x-if="!loading && showMode && currentShow">
+				<div class="show-page-wrap">
+					<!-- 顶部条 -->
+					<div class="show-topbar">
+						<a
+							:href="`${base}/${phoneHash8}/${slug}/`"
+							class="show-back-btn"
+							title="回画廊"
+						>← 回到画廊</a>
+						<div class="show-title-area">
+							<div class="show-title" x-text="currentShow.title || '未命名展示'"></div>
+							<div class="show-meta">
+								<span x-text="layoutLabel(currentShow.layout)"></span>
+								<span class="mx-1">·</span>
+								<span x-text="`${currentShow.photoIds.length} 张`"></span>
+							</div>
+						</div>
+						<template x-if="isOwner">
+							<button
+								type="button"
+								@click="deleteCurrentShow()"
+								class="show-delete-btn"
+								title="删除这个展示(不会删图)"
+							>× 删除展示</button>
+						</template>
+					</div>
+					<!-- viewer 容器,JS mount Swiper / scroll-snap 进来 -->
+					<div id="show-viewer"></div>
 				</div>
 			</template>
 		</div>
 	</section>
+
+	<!-- ============ Picker Modal(owner 创建展示用) ============ -->
+	<div
+		x-cloak
+		x-show="pickerOpen"
+		x-data="{}"
+		class="picker-overlay"
+		@click.self="closePicker()"
+	>
+		<div class="picker-panel" @click.stop>
+			<div class="picker-header">
+				<h3 class="text-xl font-bold">创建动态展示</h3>
+				<button @click="closePicker()" class="picker-close">×</button>
+			</div>
+
+			<div class="picker-body">
+				<label class="block mb-4">
+					<span class="text-sm text-gray-600 block mb-1">标题(可选)</span>
+					<input
+						type="text"
+						x-model="pickerTitle"
+						placeholder="例:夜色街拍精选"
+						class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-black"
+					/>
+				</label>
+
+				<div class="mb-5">
+					<span class="text-sm text-gray-600 block mb-2">展示样式</span>
+					<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+						<template x-for="opt in LAYOUT_OPTS" :key="opt.key">
+							<button
+								type="button"
+								@click="pickerLayout = opt.key"
+								class="text-left p-3 rounded-lg border-2 transition-colors"
+								:class="pickerLayout === opt.key ? 'border-violet-500 bg-violet-50' : 'border-gray-200 hover:border-gray-300'"
+							>
+								<div class="text-2xl mb-1" x-text="opt.emoji"></div>
+								<div class="font-medium text-sm" x-text="opt.name"></div>
+								<div class="text-xs text-gray-500 mt-0.5" x-text="opt.hint"></div>
+							</button>
+						</template>
+					</div>
+				</div>
+
+				<div>
+					<span class="text-sm text-gray-600 block mb-2">
+						选图(点击多选 · 序号即播放顺序 · 至少 1 张)
+					</span>
+					<div class="picker-grid">
+						<template x-for="p in photos" :key="p.id">
+							<button
+								type="button"
+								@click="togglePick(p.id)"
+								class="picker-tile"
+								:class="pickerSelected.includes(p.id) ? 'picked' : ''"
+							>
+								<img :src="thumbUrl(p)" :alt="p.meta.title || ''" loading="lazy" />
+								<template x-if="pickerSelected.includes(p.id)">
+									<span class="picker-badge" x-text="pickerSelected.indexOf(p.id) + 1"></span>
+								</template>
+							</button>
+						</template>
+					</div>
+				</div>
+			</div>
+
+			<div class="picker-footer">
+				<span class="text-sm text-gray-500">
+					已选 <strong x-text="pickerSelected.length"></strong> 张
+				</span>
+				<div class="flex gap-2">
+					<button @click="closePicker()" class="px-4 py-2 text-sm text-gray-600 hover:text-black">取消</button>
+					<button
+						@click="savePicker()"
+						:disabled="!canSavePicker || pickerBusy"
+						class="px-5 py-2 bg-black text-white text-sm rounded font-medium hover:bg-violet-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+					>
+						<span x-show="!pickerBusy">保存 + 打开</span>
+						<span x-show="pickerBusy">保存中...</span>
+					</button>
+				</div>
+			</div>
+			<p
+				x-show="pickerError"
+				x-text="pickerError"
+				class="text-xs text-red-600 mt-2 px-5"
+			></p>
+		</div>
+	</div>
 </MainLayout>
 
 <script>
@@ -135,9 +278,35 @@ export async function getStaticPaths() {
 	} from '../../lib/photos';
 	import { setupGallery, teardownGallery } from '../../scripts/photo-grid';
 	import { getSession, phoneHash } from '../../lib/auth';
+	import {
+		listShows,
+		getShow,
+		createShow,
+		deleteShow,
+		type Show,
+		type ShowLayout,
+	} from '../../lib/shows';
+	import { renderShow } from '../../scripts/show-viewers';
+
+	const LAYOUT_OPTS: { key: ShowLayout; emoji: string; name: string; hint: string }[] = [
+		{ key: 'coverflow', emoji: '🎞️', name: '3D 旋转', hint: '中间正放,两侧后退' },
+		{ key: 'cards', emoji: '🃏', name: '堆叠卡片', hint: '左右滑发牌切换' },
+		{ key: 'snap', emoji: '📜', name: '全屏垂直', hint: '滚动咔嚓换一张' },
+	];
+	const LAYOUT_LABEL: Record<ShowLayout, string> = {
+		coverflow: '3D 旋转',
+		cards: '堆叠卡片',
+		snap: '全屏垂直',
+	};
+	const LAYOUT_EMOJI: Record<ShowLayout, string> = {
+		coverflow: '🎞️',
+		cards: '🃏',
+		snap: '📜',
+	};
 
 	function artistPage() {
 		return {
+			LAYOUT_OPTS,
 			loading: true,
 			slug: '',
 			phoneHash8: '',
@@ -147,7 +316,36 @@ export async function getStaticPaths() {
 			activeColl: null as string | null,
 			artistName: '',
 			isOwner: false,
-			editMode: false, // 默认只读;owner 点开关才能改/删
+			editMode: false,
+
+			// shows
+			showsList: [] as Show[],
+
+			// show mode
+			showMode: false,
+			currentShow: null as Show | null,
+
+			// picker modal
+			pickerOpen: false,
+			pickerTitle: '',
+			pickerLayout: 'coverflow' as ShowLayout,
+			pickerSelected: [] as string[],
+			pickerBusy: false,
+			pickerError: '',
+
+			get canSavePicker(): boolean {
+				return this.pickerSelected.length > 0;
+			},
+
+			layoutLabel(k: ShowLayout): string {
+				return LAYOUT_LABEL[k] || k;
+			},
+			layoutEmoji(k: ShowLayout): string {
+				return LAYOUT_EMOJI[k] || '📺';
+			},
+			thumbUrl(p: PhotoEntry): string {
+				return deliveryUrl(p, { width: 400 });
+			},
 
 			async init() {
 				this.base = (document.documentElement.dataset.base || '').replace(/\/+$/, '');
@@ -160,7 +358,6 @@ export async function getStaticPaths() {
 				}
 
 				const all = await listAll();
-				// 同 slug 不同 ownerHash 算独立 artist —— filter 要同时匹配 slug + ownerHash 前 8 位
 				const mine = all.filter(
 					(p) => p.artistSlug === this.slug && p.ownerHash?.startsWith(this.phoneHash8),
 				);
@@ -171,8 +368,7 @@ export async function getStaticPaths() {
 					const groups = groupByCollection(mine);
 					this.collections = groups.map((g) => ({ slug: g.slug, name: g.name }));
 
-					// owner 判定:session.phone 算完整 hash → 跟 mine[0].ownerHash 完整对比。
-					// 前 8 位匹配只够路由,完整 64 字符匹配才算真 owner。
+					// owner 判定:完整 hash 比对
 					const session = getSession();
 					if (session && session.phone && mine[0].ownerHash) {
 						try {
@@ -182,7 +378,37 @@ export async function getStaticPaths() {
 							this.isOwner = false;
 						}
 					}
+
+					// 拉这个 artist 的 shows(展示列表/show 详情查找两用)
+					const fullOwnerHash = mine[0].ownerHash || '';
+					this.showsList = await listShows({
+						ownerHash: fullOwnerHash,
+						artistSlug: this.slug,
+					});
 				}
+
+				// === 分两路:show mode vs gallery mode ===
+				if (parsed.showId) {
+					const show = await getShow(parsed.showId);
+					if (show && show.artistSlug === this.slug && show.ownerHash.startsWith(this.phoneHash8)) {
+						this.currentShow = show;
+						this.showMode = true;
+						this.loading = false;
+						await this.$nextTick();
+						const container = document.getElementById('show-viewer');
+						if (container) {
+							// 按 photoIds 数组顺序过滤 photos
+							const idIdx = new Map(show.photoIds.map((id, i) => [id, i]));
+							const orderedPhotos = mine
+								.filter((p) => idIdx.has(p.id))
+								.sort((a, b) => (idIdx.get(a.id) ?? 0) - (idIdx.get(b.id) ?? 0));
+							renderShow(container, show.layout, orderedPhotos);
+						}
+						return;
+					}
+					// show 找不到 / 不属于这个 artist → 退化到 gallery mode 显示
+				}
+
 				this.loading = false;
 				await this.$nextTick();
 				renderGrid(this.filtered(), this.isOwner && this.editMode, (id, path) => this.removeOne(id, path));
@@ -221,37 +447,95 @@ export async function getStaticPaths() {
 			async toggleEditMode() {
 				if (!this.isOwner) return;
 				this.editMode = !this.editMode;
-				// 切换后重渲染让 × 按钮出现/消失
 				await this.$nextTick();
 				renderGrid(this.filtered(), this.isOwner && this.editMode, (id, path) => this.removeOne(id, path));
+			},
+
+			/* ---------- Picker ---------- */
+			openPicker() {
+				if (!this.isOwner) return;
+				this.pickerTitle = '';
+				this.pickerLayout = 'coverflow';
+				this.pickerSelected = [];
+				this.pickerError = '';
+				this.pickerOpen = true;
+			},
+			closePicker() {
+				if (this.pickerBusy) return;
+				this.pickerOpen = false;
+			},
+			togglePick(photoId: string) {
+				const i = this.pickerSelected.indexOf(photoId);
+				if (i >= 0) this.pickerSelected.splice(i, 1);
+				else this.pickerSelected.push(photoId);
+			},
+			async savePicker() {
+				if (this.pickerBusy || !this.canSavePicker) return;
+				this.pickerError = '';
+				const session = getSession();
+				if (!session) {
+					this.pickerError = '会话失效,回 /login';
+					return;
+				}
+				const ownerHash = this.photos[0]?.ownerHash;
+				if (!ownerHash) {
+					this.pickerError = '当前画廊没有图,无法创建';
+					return;
+				}
+				this.pickerBusy = true;
+				try {
+					const id = await createShow({
+						ownerHash,
+						artistSlug: this.slug,
+						title: this.pickerTitle.trim(),
+						layout: this.pickerLayout,
+						photoIds: this.pickerSelected,
+					});
+					location.href = `${this.base}/${this.phoneHash8}/${this.slug}/show/${id}/`;
+				} catch (e: any) {
+					this.pickerError = e?.message || '保存失败';
+					this.pickerBusy = false;
+				}
+			},
+
+			async deleteCurrentShow() {
+				if (!this.isOwner || !this.currentShow) return;
+				if (!confirm('删除这个展示?(图本身不会被删,只是把这个展示页拆掉)')) return;
+				try {
+					await deleteShow(this.currentShow.id);
+					location.replace(`${this.base}/${this.phoneHash8}/${this.slug}/`);
+				} catch (e: any) {
+					alert(e?.message || '删除展示失败');
+				}
 			},
 		};
 	}
 
-	function parseFromUrl(): { phone8: string; slug: string } {
-		// dev 模式 ?phone=xxx&slug=yyy 走 query,方便不开 404 fallback 时直接测
+	function parseFromUrl(): { phone8: string; slug: string; showId: string | null } {
+		// dev 模式 ?phone=xxx&slug=yyy&show=zzz 走 query
 		const params = new URLSearchParams(window.location.search);
-		const fromQuery = { phone8: params.get('phone') || '', slug: params.get('slug') || '' };
-		if (fromQuery.phone8 && fromQuery.slug) return fromQuery;
+		const qPhone = params.get('phone') || '';
+		const qSlug = params.get('slug') || '';
+		const qShow = params.get('show') || null;
+		if (qPhone && qSlug) return { phone8: qPhone, slug: qSlug, showId: qShow };
 
-		// 正常路径:/<base>/<phoneHash8>/<slug>/[...]
+		// 正常路径:/<base>/<phoneHash8>/<slug>[/show/<showId>]/
 		const path = window.location.pathname.replace(/\/+$/, '');
 		const baseEl = document.getElementById('artist-page');
 		const base = (baseEl?.dataset.base || '/').replace(/\/+$/, '');
 		let rest = path;
 		if (base && rest.startsWith(base)) rest = rest.slice(base.length);
 		rest = rest.replace(/^\/+/, '');
-		const segs = rest.split('/');
+		const segs = rest.split('/').filter(Boolean);
 		const phone8 = segs[0] || '';
 		const slug = segs[1] || '';
-		if (phone8 === '__phone__' || slug === '__slug__') return { phone8: '', slug: '' };
-		// 保留字 / 单段路径不当 artist page
+		const showId = segs[2] === 'show' && segs[3] ? segs[3] : null;
+		if (phone8 === '__phone__' || slug === '__slug__') return { phone8: '', slug: '', showId: null };
 		const reserved = new Set(['', 'about', 'collections', 'upload', 'artists', 'search', 'login']);
-		if (reserved.has(phone8)) return { phone8: '', slug: '' };
-		if (!slug) return { phone8: '', slug: '' }; // 只有一段(/xxx/),不是 artist page
-		// phone8 必须是 8 位 hex 字符
-		if (!/^[0-9a-f]{8}$/i.test(phone8)) return { phone8: '', slug: '' };
-		return { phone8, slug };
+		if (reserved.has(phone8)) return { phone8: '', slug: '', showId: null };
+		if (!slug) return { phone8: '', slug: '', showId: null };
+		if (!/^[0-9a-f]{8}$/i.test(phone8)) return { phone8: '', slug: '', showId: null };
+		return { phone8, slug, showId };
 	}
 
 	function renderGrid(
@@ -285,7 +569,6 @@ export async function getStaticPaths() {
 			img.className = 'w-full h-full object-cover rounded-sm shadow-sm hover:shadow-lg transition-shadow';
 			a.appendChild(img);
 
-			// 右下角 title 角标
 			if (p.meta.title) {
 				const tag = document.createElement('div');
 				tag.className =
@@ -294,7 +577,6 @@ export async function getStaticPaths() {
 				a.appendChild(tag);
 			}
 
-			// owner 模式:右上角 × 按钮
 			if (isOwner && onDelete) {
 				const btn = document.createElement('button');
 				btn.type = 'button';
@@ -321,3 +603,233 @@ export async function getStaticPaths() {
 		(window as any).Alpine?.data('artistPage', artistPage);
 	});
 </script>
+
+<style is:global>
+	/* ---------- Show 页通用容器 ---------- */
+	.show-page-wrap {
+		position: fixed;
+		inset: 0;
+		background: #000;
+		z-index: 30;
+		display: flex;
+		flex-direction: column;
+	}
+	.show-topbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.75rem 1rem;
+		background: rgba(0, 0, 0, 0.6);
+		color: #fff;
+		backdrop-filter: blur(8px);
+		z-index: 10;
+	}
+	.show-back-btn {
+		color: #fff;
+		font-size: 13px;
+		padding: 0.4rem 0.8rem;
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.1);
+		transition: background 0.2s;
+	}
+	.show-back-btn:hover { background: rgba(255, 255, 255, 0.2); }
+	.show-title-area { text-align: center; flex: 1; min-width: 0; }
+	.show-title { font-weight: 600; font-size: 15px; }
+	.show-meta { font-size: 11px; color: #aaa; margin-top: 1px; }
+	.show-delete-btn {
+		color: #fff;
+		font-size: 12px;
+		padding: 0.4rem 0.7rem;
+		border-radius: 999px;
+		background: rgba(220, 38, 38, 0.7);
+	}
+	.show-delete-btn:hover { background: rgba(220, 38, 38, 0.9); }
+	#show-viewer { flex: 1; min-height: 0; }
+	.show-viewer { width: 100%; height: 100%; position: relative; }
+	.show-caption {
+		position: absolute;
+		bottom: 1rem;
+		left: 50%;
+		transform: translateX(-50%);
+		padding: 6px 14px;
+		border-radius: 999px;
+		background: rgba(0, 0, 0, 0.6);
+		color: #fff;
+		font-size: 12px;
+		max-width: 90%;
+		text-align: center;
+		backdrop-filter: blur(4px);
+	}
+
+	/* ---------- Coverflow ---------- */
+	.show-coverflow, .show-coverflow-swiper {
+		width: 100%;
+		height: 100%;
+	}
+	.show-coverflow-swiper .swiper-slide {
+		width: min(70vw, 70vh);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.show-coverflow-swiper .swiper-slide img {
+		width: 100%;
+		height: auto;
+		max-height: 80vh;
+		object-fit: contain;
+		border-radius: 6px;
+		display: block;
+	}
+
+	/* ---------- Cards ---------- */
+	.show-cards, .show-cards-swiper {
+		width: min(70vw, 80vh);
+		max-width: 480px;
+		height: 80vh;
+		margin: 0 auto;
+		display: flex;
+		align-items: center;
+	}
+	.show-cards-swiper .swiper-slide {
+		border-radius: 14px;
+		overflow: hidden;
+		background: #1a1a1a;
+	}
+	.show-card-inner { width: 100%; height: 100%; position: relative; }
+	.show-card-inner img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+	.show-caption-cards { bottom: 1.5rem; }
+
+	/* ---------- Snap (纯 CSS 全屏垂直) ---------- */
+	.show-snap { width: 100%; height: 100%; }
+	.show-snap-scroller {
+		width: 100%;
+		height: 100%;
+		overflow-y: scroll;
+		scroll-snap-type: y mandatory;
+		scroll-behavior: smooth;
+	}
+	.show-snap-slide {
+		width: 100%;
+		height: 100%;
+		scroll-snap-align: start;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		position: relative;
+		background: #000;
+	}
+	.show-snap-slide img {
+		max-width: 100%;
+		max-height: 100%;
+		object-fit: contain;
+		opacity: 0;
+		transform: scale(0.96);
+		transition: opacity 0.6s ease, transform 0.6s ease;
+	}
+	.show-snap-slide.in-view img {
+		opacity: 1;
+		transform: scale(1);
+	}
+	.show-caption-snap { bottom: 2rem; }
+
+	/* ---------- Picker Modal ---------- */
+	.picker-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.55);
+		backdrop-filter: blur(4px);
+		z-index: 100;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 1rem;
+	}
+	.picker-panel {
+		background: #fff;
+		width: 100%;
+		max-width: 760px;
+		max-height: 92vh;
+		display: flex;
+		flex-direction: column;
+		border-radius: 12px;
+		overflow: hidden;
+		box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+	}
+	.picker-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1rem 1.25rem;
+		border-bottom: 1px solid #eee;
+	}
+	.picker-close {
+		font-size: 24px;
+		line-height: 1;
+		width: 32px;
+		height: 32px;
+		border-radius: 999px;
+		color: #666;
+	}
+	.picker-close:hover { background: #f5f5f5; color: #000; }
+	.picker-body {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		padding: 1.25rem;
+	}
+	.picker-grid {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 8px;
+	}
+	@media (min-width: 768px) {
+		.picker-grid { grid-template-columns: repeat(6, 1fr); }
+	}
+	.picker-tile {
+		position: relative;
+		aspect-ratio: 1;
+		overflow: hidden;
+		border-radius: 6px;
+		border: 2px solid transparent;
+		background: #f5f5f5;
+		transition: border-color 0.15s, transform 0.15s;
+	}
+	.picker-tile img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		transition: opacity 0.15s;
+	}
+	.picker-tile:hover { border-color: #cbd5e1; transform: scale(1.02); }
+	.picker-tile.picked { border-color: #7c3aed; }
+	.picker-tile.picked img { opacity: 0.6; }
+	.picker-badge {
+		position: absolute;
+		top: 4px;
+		right: 4px;
+		width: 22px;
+		height: 22px;
+		border-radius: 999px;
+		background: #7c3aed;
+		color: #fff;
+		font-size: 11px;
+		font-weight: 600;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.picker-footer {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.875rem 1.25rem;
+		border-top: 1px solid #eee;
+		background: #fafafa;
+	}
+</style>
