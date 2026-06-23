@@ -65,3 +65,9 @@
 		@apply w-full;
 	}
 }
+
+/* Alpine 启动前隐藏带 x-cloak 的元素 —— 防止 mobile menu / 各种 x-show
+ * 元素在 Alpine hydrate 完前默认 display:block 闪一下(或在低端机上一直可见) */
+[x-cloak] {
+	display: none !important;
+}

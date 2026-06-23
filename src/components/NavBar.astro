@@ -82,14 +82,14 @@ const menuItems = [
 			class="md:hidden text-gray-800 focus:outline-none p-2 -mr-2"
 			aria-label="切换菜单"
 		>
-			<svg x-show="!isOpen" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+			<svg x-show="!isOpen" x-cloak class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 				<path
 					stroke-linecap="round"
 					stroke-linejoin="round"
 					stroke-width="2"
 					d="M4 6h16M4 12h16M4 18h16"></path>
 			</svg>
-			<svg x-show="isOpen" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+			<svg x-show="isOpen" x-cloak class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 				<path
 					stroke-linecap="round"
 					stroke-linejoin="round"
@@ -100,7 +100,7 @@ const menuItems = [
 	</div>
 
 	<!-- Mobile Menu -->
-	<div x-show="isOpen" class="md:hidden absolute top-full left-0 w-full bg-white shadow-md">
+	<div x-show="isOpen" x-cloak class="md:hidden absolute top-full left-0 w-full bg-white shadow-md">
 		<div class="flex flex-col py-2 px-6">
 			{
 				menuItems.map((item) => (
