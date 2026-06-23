@@ -44,10 +44,28 @@ import '../styles/glightbox-custom.css';
 		overflow: hidden;
 		border-radius: 2px;
 		transition: transform 0.2s ease;
+		position: relative; /* 给右下角 title 角标定位用 */
 	}
 	.featured-marquee-track .photo-item:hover {
 		transform: scale(1.02);
 		z-index: 2;
+	}
+	.featured-marquee-track .photo-title-tag {
+		position: absolute;
+		bottom: 8px;
+		right: 8px;
+		padding: 3px 7px;
+		border-radius: 5px;
+		background: rgba(0, 0, 0, 0.6);
+		color: white;
+		font-size: 11px;
+		font-weight: 500;
+		backdrop-filter: blur(4px);
+		pointer-events: none;
+		max-width: 80%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.featured-marquee-track .photo-item img {
 		height: 100%;
@@ -147,6 +165,15 @@ import '../styles/glightbox-custom.css';
 		img.height = p.height;
 		img.loading = 'lazy';
 		a.appendChild(img);
+
+		// 右下角 title 角标 —— 跟灯箱里底部的 description 形成对角
+		if (p.meta.title) {
+			const tag = document.createElement('div');
+			tag.className = 'photo-title-tag';
+			tag.textContent = p.meta.title;
+			a.appendChild(tag);
+		}
+
 		return a;
 	}
 

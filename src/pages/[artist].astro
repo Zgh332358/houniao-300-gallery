@@ -192,6 +192,15 @@ export async function getStaticPaths() {
 			img.className = 'w-full h-full object-cover rounded-sm shadow-sm hover:shadow-lg transition-shadow';
 			a.appendChild(img);
 
+			// 右下角 title 角标 —— 跟灯箱里底部的 description 形成对角
+			if (p.meta.title) {
+				const tag = document.createElement('div');
+				tag.className =
+					'photo-title-tag absolute bottom-2 right-2 px-2 py-1 rounded-md bg-black/60 text-white text-[11px] font-medium backdrop-blur-sm pointer-events-none max-w-[80%] truncate';
+				tag.textContent = p.meta.title;
+				a.appendChild(tag);
+			}
+
 			grid.appendChild(a);
 		}
 		setupGallery();
