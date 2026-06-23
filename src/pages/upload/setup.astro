@@ -64,18 +64,15 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 				<div class="flex justify-between items-center">
 					<dt class="text-gray-500">多模态(读图 + 文案 + 对话 + 审核 + 检索)</dt>
 					<dd>
-						<input
-							type="text"
-							x-model="model"
-							@input="persist()"
-							placeholder="step-3.7-flash"
-							class="px-2 py-1 border border-gray-300 rounded font-mono text-xs focus:outline-none focus:border-violet-500"
-						/>
+						<span
+							class="px-2 py-1 bg-gray-100 rounded font-mono text-xs font-bold text-gray-900 select-all"
+							x-text="model || 'step-3.7-flash'"
+						></span>
 					</dd>
 				</div>
 			</dl>
 			<p class="text-xs text-gray-400 mt-3">
-				多模态模型可改成其它支持图像理解的模型
+				多模态模型由平台预设,不可修改
 			</p>
 		</section>
 
