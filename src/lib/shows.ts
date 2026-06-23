@@ -131,6 +131,34 @@ export async function createShow(input: {
 }
 
 /**
+ * 重命名 show 的 title。0007 migration 给了列级 UPDATE 权限,只允许改 title;
+ * 改其他字段服务端会拒。.select() 拿回受影响行,检测 RLS 是否真生效。
+ */
+export async function renameShow(showId: string, title: string): Promise<void> {
+	if (!showId) throw new Error('showId 必填');
+	const res = await fetch(
+		`${cfg.url}/rest/v1/shows?id=eq.${encodeURIComponent(showId)}&select=id`,
+		{
+			method: 'PATCH',
+			headers: {
+				...SB_HEADERS,
+				'Content-Type': 'application/json',
+				Prefer: 'return=representation',
+			},
+			body: JSON.stringify({ title: title || '' }),
+		},
+	);
+	if (!res.ok) {
+		const body = await res.text().catch(() => '');
+		throw new Error(`renameShow 失败 HTTP ${res.status}: ${body.slice(0, 200)}`);
+	}
+	const rows = await res.json().catch(() => []);
+	if (!Array.isArray(rows) || rows.length === 0) {
+		throw new Error('renameShow: 0 行受影响(RLS 没放行?跑 migration 0007)');
+	}
+}
+
+/**
  * 删除一个 show。RLS 不验 ownership,**调用方必须在 UI 层确认是 owner**
  * 才调本函数。.select() 拿回行用来检测 DELETE 是否真生效。
  */

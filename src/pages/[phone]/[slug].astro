@@ -52,23 +52,6 @@ export async function getStaticPaths() {
 							<span x-text="phoneHash8"></span> · <span x-text="`/${slug}/`"></span>
 						</p>
 
-						<!-- shows chip 列表(owner 和访客都看,如有) -->
-						<template x-if="showsList.length > 0">
-							<div class="mt-6 flex flex-wrap items-center justify-center gap-2">
-								<span class="text-xs text-gray-500">📺 动态展示:</span>
-								<template x-for="s in showsList" :key="s.id">
-									<a
-										:href="`${base}/${phoneHash8}/${slug}/show/${s.id}/`"
-										class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-100 text-violet-700 text-xs hover:bg-violet-200 transition-colors"
-									>
-										<span x-text="layoutEmoji(s.layout)"></span>
-										<span x-text="s.title || '未命名'"></span>
-										<span class="text-violet-400" x-text="`(${s.photoIds.length})`"></span>
-									</a>
-								</template>
-							</div>
-						</template>
-
 						<!-- owner 胶囊 -->
 						<template x-if="isOwner">
 							<div class="mt-4 inline-flex flex-wrap items-center justify-center gap-3 px-4 py-2 rounded-full bg-violet-50 border border-violet-200">
@@ -105,6 +88,89 @@ export async function getStaticPaths() {
 							</div>
 						</template>
 					</header>
+
+					<!-- ============ 动态展示 section ============ -->
+					<template x-if="showsList.length > 0 || isOwner">
+						<section class="mb-12">
+							<div class="flex items-baseline justify-between mb-5">
+								<h2 class="text-2xl font-bold flex items-center gap-2">
+									<span>📺</span>
+									<span>动态展示</span>
+									<span class="text-sm font-normal text-gray-400" x-text="showsList.length > 0 ? `${showsList.length} 个` : ''"></span>
+								</h2>
+								<template x-if="isOwner && showsList.length > 0">
+									<button
+										type="button"
+										@click="openPicker()"
+										class="text-sm text-violet-700 hover:underline"
+									>+ 新建</button>
+								</template>
+							</div>
+
+							<!-- 空状态(只有 owner 看到) -->
+							<template x-if="showsList.length === 0 && isOwner">
+								<div class="text-center py-10 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+									<p class="text-gray-500 mb-4 text-sm">还没有创建动态展示 · 从你的作品里挑几张做成全屏沉浸式播放</p>
+									<button
+										@click="openPicker()"
+										class="px-5 py-2 bg-black text-white rounded text-sm font-medium hover:bg-violet-600"
+									>+ 创建一个</button>
+								</div>
+							</template>
+
+							<!-- 卡片网格 -->
+							<template x-if="showsList.length > 0">
+								<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+									<template x-for="s in showsList" :key="s.id">
+										<div class="show-card group relative">
+											<a
+												:href="`${base}/${phoneHash8}/${slug}/show/${s.id}/`"
+												class="block bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
+											>
+												<div class="aspect-[4/3] bg-gray-100 overflow-hidden">
+													<img
+														x-show="coverUrlForShow(s)"
+														:src="coverUrlForShow(s)"
+														:alt="s.title || '未命名展示'"
+														class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+														loading="lazy"
+													/>
+												</div>
+												<div class="p-4 flex items-center gap-2">
+													<span class="text-xl" x-text="layoutEmoji(s.layout)"></span>
+													<!-- 标题:非编辑 = 文本,编辑模式 = 可改 input -->
+													<template x-if="!(isOwner && editMode)">
+														<span class="font-medium truncate" x-text="s.title || '未命名展示'"></span>
+													</template>
+													<template x-if="isOwner && editMode">
+														<input
+															type="text"
+															:value="s.title"
+															@click.prevent.stop
+															@keydown.enter.prevent="$event.target.blur()"
+															@blur="renameShowInline(s.id, $event.target.value)"
+															placeholder="未命名展示"
+															class="font-medium border-b border-violet-400 focus:outline-none focus:border-violet-600 px-1 py-0.5 flex-1 bg-transparent min-w-0"
+														/>
+													</template>
+													<span class="text-xs text-gray-500 ml-auto flex-shrink-0" x-text="`${s.photoIds.length} 张`"></span>
+												</div>
+											</a>
+											<!-- 编辑模式右上 × 删除按钮 -->
+											<template x-if="isOwner && editMode">
+												<button
+													type="button"
+													@click="removeShow(s.id)"
+													class="absolute top-2 right-2 w-7 h-7 rounded-full bg-red-600/85 hover:bg-red-700 text-white text-base font-bold flex items-center justify-center shadow-md transition opacity-0 group-hover:opacity-100"
+													title="删除这个展示(图片本身不会删)"
+												>×</button>
+											</template>
+										</div>
+									</template>
+								</div>
+							</template>
+						</section>
+					</template>
 
 					<!-- collection 标签栏 -->
 					<div class="flex justify-center mb-10" x-show="collections.length > 1">
@@ -161,14 +227,8 @@ export async function getStaticPaths() {
 								<span x-text="`${currentShow.photoIds.length} 张`"></span>
 							</div>
 						</div>
-						<template x-if="isOwner">
-							<button
-								type="button"
-								@click="deleteCurrentShow()"
-								class="show-delete-btn"
-								title="删除这个展示(不会删图)"
-							>× 删除展示</button>
-						</template>
+						<!-- 删除展示已经搬回画廊管理列表(编辑模式下点卡片右上 ×),
+						     show 顶部条只保留导航 -->
 					</div>
 					<!-- viewer 容器,JS mount Swiper / scroll-snap 进来 -->
 					<div id="show-viewer"></div>
@@ -283,6 +343,7 @@ export async function getStaticPaths() {
 		getShow,
 		createShow,
 		deleteShow,
+		renameShow,
 		type Show,
 		type ShowLayout,
 	} from '../../lib/shows';
@@ -501,12 +562,42 @@ export async function getStaticPaths() {
 				}
 			},
 
-			async deleteCurrentShow() {
-				if (!this.isOwner || !this.currentShow) return;
-				if (!confirm('删除这个展示?(图本身不会被删,只是把这个展示页拆掉)')) return;
+			/* ---------- Shows section (画廊视图里) ---------- */
+
+			/** 找一个 show 的封面图 URL —— 拿 photoIds[0] 对应的 photo,deliveryUrl 缩到 800 */
+			coverUrlForShow(s: Show): string {
+				if (!s.photoIds.length) return '';
+				const id = s.photoIds[0];
+				const p = this.photos.find((ph) => ph.id === id);
+				if (!p) return '';
+				return deliveryUrl(p, { width: 800 });
+			},
+
+			/** 改 show 标题 —— input blur 时触发,值跟 DB 一样就跳过(避免无谓 PATCH) */
+			async renameShowInline(showId: string, newTitle: string) {
+				if (!this.isOwner || !this.editMode) return;
+				const idx = this.showsList.findIndex((s) => s.id === showId);
+				if (idx < 0) return;
+				const trimmed = (newTitle || '').trim();
+				if (trimmed === this.showsList[idx].title) return; // 没变,跳过
 				try {
-					await deleteShow(this.currentShow.id);
-					location.replace(`${this.base}/${this.phoneHash8}/${this.slug}/`);
+					await renameShow(showId, trimmed);
+					// 本地同步,UI 立刻反映
+					this.showsList[idx] = { ...this.showsList[idx], title: trimmed };
+				} catch (e: any) {
+					alert(e?.message || '改名失败');
+				}
+			},
+
+			/** 删 show(仅删 shows 行,photos 不动) */
+			async removeShow(showId: string) {
+				if (!this.isOwner || !this.editMode) return;
+				const s = this.showsList.find((x) => x.id === showId);
+				const tip = s?.title ? `「${s.title}」` : '这个展示';
+				if (!confirm(`删除 ${tip}?图本身不会被删,只是把这个展示页拆掉。`)) return;
+				try {
+					await deleteShow(showId);
+					this.showsList = this.showsList.filter((x) => x.id !== showId);
 				} catch (e: any) {
 					alert(e?.message || '删除展示失败');
 				}
