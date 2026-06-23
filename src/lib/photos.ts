@@ -517,3 +517,58 @@ export function srcSet(_entry: PhotoEntry): string {
 	// Supabase Free 不带 image transformations，无法生成多尺寸 srcset
 	return '';
 }
+
+/* ---------- 删除 ---------- */
+
+/**
+ * 删除一张作品 —— 先删 photos 表行,再尽力清掉 storage 里的 JPEG。
+ *
+ * 荣誉系统:服务端 RLS 不区分"是不是你自己的图"(0004 migration 只放
+ * `using (true)`)。**调用方必须在 UI 层先确认 ownership**(比如
+ * /<slug>/ 页面只在 session.slug === 当前 slug 时才显示删除按钮)。
+ *
+ * 抛错的情况:
+ *  - DB DELETE 返回 0 行(RLS 没放行 DELETE,需先跑 migration 0004)
+ *  - DB DELETE 网络错误
+ * Storage 删除失败不抛 —— 大不了留一个孤儿 JPEG,占点存储,不影响功能。
+ */
+export async function deletePhoto(photoId: string, storagePath: string): Promise<void> {
+	if (!photoId) throw new Error('photoId 必填');
+	if (getMode() === 'mock') {
+		// mock 模式从 localStorage 上传记录里抹掉
+		try {
+			const raw = localStorage.getItem(MOCK_UPLOAD_KEY);
+			if (raw) {
+				const arr: PhotoEntry[] = JSON.parse(raw);
+				const next = arr.filter((p) => p.id !== photoId);
+				localStorage.setItem(MOCK_UPLOAD_KEY, JSON.stringify(next));
+			}
+		} catch {
+			/* ignore */
+		}
+		return;
+	}
+
+	const sb = getClient();
+	// .select('id') 拿回受影响行 —— RLS 静默拒绝时 data 为 [],能识破
+	const { data, error } = await sb.from('photos').delete().eq('id', photoId).select('id');
+	if (error) throw new Error(`删除作品失败: ${error.message}`);
+	if (!data || data.length === 0) {
+		throw new Error(
+			'删除作品失败: 0 行受影响(photos 表未放行 anon DELETE,请到 Supabase 跑 migrations/0004)',
+		);
+	}
+
+	// best-effort 删 storage 里的 JPEG。失败不抛。
+	if (storagePath) {
+		await fetch(`${cfg.url}/storage/v1/object/${cfg.bucket}/${storagePath}`, {
+			method: 'DELETE',
+			headers: {
+				Authorization: `Bearer ${cfg.anonKey}`,
+				apikey: cfg.anonKey,
+			},
+		}).catch(() => {
+			/* 留孤儿对象,不阻断 */
+		});
+	}
+}

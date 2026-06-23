@@ -97,9 +97,11 @@ export async function getStaticPaths() {
 		groupByCollection,
 		deliveryUrl,
 		srcSet,
+		deletePhoto,
 		type PhotoEntry,
 	} from '../lib/photos';
 	import { setupGallery, teardownGallery } from '../scripts/photo-grid';
+	import { getSession } from '../lib/auth';
 
 	function artistPage() {
 		return {
@@ -110,6 +112,7 @@ export async function getStaticPaths() {
 			collections: [] as { slug: string; name: string }[],
 			activeColl: null as string | null,
 			artistName: '',
+			isOwner: false,
 
 			async init() {
 				this.base = (document.documentElement.dataset.base || '').replace(/\/+$/, '');
@@ -118,6 +121,10 @@ export async function getStaticPaths() {
 					this.loading = false;
 					return;
 				}
+				// 是不是看自己的画廊?(荣誉系统:session 里 slug 跟当前 URL 一致就算)
+				const session = getSession();
+				this.isOwner = !!(session && session.slug && session.slug === this.slug);
+
 				const all = await listAll();
 				const mine = all.filter((p) => p.artistSlug === this.slug);
 				this.photos = mine;
@@ -129,7 +136,27 @@ export async function getStaticPaths() {
 				}
 				this.loading = false;
 				await this.$nextTick();
-				renderGrid(this.filtered());
+				renderGrid(this.filtered(), this.isOwner, (id, path) => this.removeOne(id, path));
+			},
+
+			async removeOne(photoId: string, storagePath: string) {
+				if (!this.isOwner) return;
+				if (!confirm('确认删除这张作品?删除后无法恢复。')) return;
+				try {
+					await deletePhoto(photoId, storagePath);
+					// 本地数组同步剔掉,然后重渲染
+					this.photos = this.photos.filter((p) => p.id !== photoId);
+					if (this.photos.length > 0) {
+						const groups = groupByCollection(this.photos);
+						this.collections = groups.map((g) => ({ slug: g.slug, name: g.name }));
+					} else {
+						this.collections = [];
+					}
+					await this.$nextTick();
+					renderGrid(this.filtered(), this.isOwner, (id, path) => this.removeOne(id, path));
+				} catch (e: any) {
+					alert(e?.message || '删除失败,稍后再试');
+				}
 			},
 
 			filtered() {
@@ -140,7 +167,7 @@ export async function getStaticPaths() {
 			async selectCollection(coll: string | null) {
 				this.activeColl = coll;
 				await this.$nextTick();
-				renderGrid(this.filtered());
+				renderGrid(this.filtered(), this.isOwner, (id, path) => this.removeOne(id, path));
 			},
 		};
 	}
@@ -165,7 +192,11 @@ export async function getStaticPaths() {
 		return seg;
 	}
 
-	function renderGrid(photos: PhotoEntry[]) {
+	function renderGrid(
+		photos: PhotoEntry[],
+		isOwner: boolean = false,
+		onDelete?: (photoId: string, storagePath: string) => void,
+	) {
 		const grid = document.getElementById('photo-grid');
 		if (!grid) return;
 		teardownGallery();
@@ -199,6 +230,24 @@ export async function getStaticPaths() {
 					'photo-title-tag absolute bottom-2 right-2 px-2 py-1 rounded-md bg-black/60 text-white text-[11px] font-medium backdrop-blur-sm pointer-events-none max-w-[80%] truncate';
 				tag.textContent = p.meta.title;
 				a.appendChild(tag);
+			}
+
+			// owner 模式:右上角 × 按钮,点了拦截灯箱 + 触发删除回调
+			if (isOwner && onDelete) {
+				const btn = document.createElement('button');
+				btn.type = 'button';
+				btn.title = '删除这张作品';
+				btn.setAttribute('aria-label', '删除作品');
+				btn.className =
+					'photo-delete-btn absolute top-2 right-2 w-7 h-7 rounded-full bg-red-600/85 hover:bg-red-700 text-white text-base font-bold flex items-center justify-center shadow-md transition';
+				btn.textContent = '×';
+				btn.addEventListener('click', (e) => {
+					// 阻止灯箱打开 + 阻止 <a> 跳转
+					e.preventDefault();
+					e.stopPropagation();
+					onDelete(p.id, p.storagePath);
+				});
+				a.appendChild(btn);
 			}
 
 			grid.appendChild(a);
