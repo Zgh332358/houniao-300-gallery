@@ -63,7 +63,7 @@ const menuItems = [
 						<div>
 							<a
 								x-show="boundSlug"
-								:href="`${baseStr}/${boundSlug}/`"
+								:href="boundSlugHref"
 								class="text-violet-600 font-mono hover:underline"
 								x-text="`/${boundSlug}/`"
 							></a>
@@ -131,7 +131,7 @@ const menuItems = [
 </nav>
 
 <script>
-	import { getSession, clearSession, maskPhone } from '../lib/auth';
+	import { getSession, clearSession, maskPhone, phoneHash, phoneHashShort } from '../lib/auth';
 
 	function navBar() {
 		return {
@@ -140,6 +140,7 @@ const menuItems = [
 			loggedIn: false,
 			phoneMasked: '',
 			boundSlug: '',
+			boundSlugHref: '',
 			baseStr: '/',
 
 			init() {
@@ -151,16 +152,28 @@ const menuItems = [
 					if (e.key === 'pf:auth:v1') this.refresh();
 				});
 			},
-			refresh() {
+			async refresh() {
 				const s = getSession();
 				if (s) {
 					this.loggedIn = true;
 					this.phoneMasked = maskPhone(s.phone);
 					this.boundSlug = s.slug || '';
+					// 算 phoneHash 前 8 位拼链接 /<hash8>/<slug>/
+					if (s.slug) {
+						try {
+							const hash8 = phoneHashShort(await phoneHash(s.phone));
+							this.boundSlugHref = `${this.baseStr}/${hash8}/${s.slug}/`;
+						} catch {
+							this.boundSlugHref = '';
+						}
+					} else {
+						this.boundSlugHref = '';
+					}
 				} else {
 					this.loggedIn = false;
 					this.phoneMasked = '';
 					this.boundSlug = '';
+					this.boundSlugHref = '';
 				}
 			},
 			logout() {

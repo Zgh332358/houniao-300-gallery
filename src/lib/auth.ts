@@ -36,6 +36,11 @@ export async function phoneHash(phone: string): Promise<string> {
 		.join('');
 }
 
+/** 取完整 hash 前 8 位作 URL 短句柄。所有权判定要用完整 64 字符,不能用这个。 */
+export function phoneHashShort(hashFull: string): string {
+	return hashFull.slice(0, 8);
+}
+
 /**
  * 把用户输入的手机号收成统一形态用于 hash:
  *  - 去掉所有空格、连字符、括号

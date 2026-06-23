@@ -208,11 +208,18 @@ export async function createArtist(input: ArtistUpsertInput): Promise<void> {
 		/* keep */
 	}
 	if (code === '23505') {
-		// unique 冲突;靠错误 details 文案分辨是哪个唯一键
+		// unique 冲突;0005 之后有两条索引可能撞:
+		//   - artists_phone_hash_uniq (phone_hash 单列):同手机已绑过别的 slug
+		//   - artists_phone_slug_uniq (phone_hash, slug) 联合:同手机已绑过同 slug
+		// 错误 message 通常带索引名,据此分辨。
+		if (message.includes('phone_slug_uniq') || message.includes('phone_hash, slug')) {
+			throw new Error('你这个手机号已经注册过这个 slug 了');
+		}
 		if (message.includes('phone_hash')) {
 			throw new Error('这个手机号已经绑过别的 slug 了 —— 回登录页重新走');
 		}
-		throw new Error('这个 slug 已经被别人用了 —— 换一个');
+		// 不该出现:slug 单列 unique 在 0005 后就 drop 掉了
+		throw new Error(`唯一约束冲突: ${message}`);
 	}
 	throw new Error(`createArtist 失败: ${message}`);
 }

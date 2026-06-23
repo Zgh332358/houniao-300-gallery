@@ -66,7 +66,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-black"
 				/>
 				<p class="text-xs text-gray-500 mt-1.5" x-show="artistSlug">
-					你的页面地址将是 <code class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono" x-text="`/${artistSlug}/`"></code>
+					你的页面地址将是 <code class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono" x-text="`/${phoneHash8 || '...'}/${artistSlug}/`"></code>
 				</p>
 			</label>
 
@@ -130,7 +130,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 	<script>
 		import { toSlug, isValidSlug } from '../../lib/photos';
 		import { getIdentity, setIdentity } from '../../lib/wizard';
-		import { getSession, bindSlugToSession, maskPhone, phoneHash, clearSession } from '../../lib/auth';
+		import { getSession, bindSlugToSession, maskPhone, phoneHash, phoneHashShort, clearSession } from '../../lib/auth';
 		import { createArtist } from '../../lib/artists';
 
 		type Mode = 'register' | 'bound' | 'created';
@@ -141,6 +141,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 				artistSlug: '',
 				artistContact: '',
 				_lastAutoSlug: '',
+				phoneHash8: '',
 				session: { phone: '', slug: '', expiresAt: 0 } as ReturnType<typeof getSession> | { phone: ''; slug: ''; expiresAt: 0 },
 				mode: 'register' as Mode,
 				creating: false,
@@ -165,7 +166,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					);
 				},
 
-				init() {
+				async init() {
 					// 1. 没登录直接踢回 /login
 					const s = getSession();
 					if (!s) {
@@ -174,6 +175,12 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 						return;
 					}
 					this.session = s;
+					// 算 phoneHash 前 8 位用于 UI 提示"你的页面地址是..."
+					try {
+						this.phoneHash8 = phoneHashShort(await phoneHash(s.phone));
+					} catch {
+						this.phoneHash8 = '';
+					}
 
 					// 2. 决定 mode
 					this.mode = s.slug ? 'bound' : 'register';

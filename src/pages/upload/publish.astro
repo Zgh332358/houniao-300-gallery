@@ -146,7 +146,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 			stepHref,
 			type WizardPhoto,
 		} from '../../lib/wizard';
-		import { requireSession } from '../../lib/auth';
+		import { requireSession, phoneHash } from '../../lib/auth';
 
 		interface PhotoView extends WizardPhoto {
 			previewUrl: string;
@@ -162,6 +162,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 				artistContact: '',
 				collectionName: '',
 				collectionSlug: '',
+				ownerHash: '', // 完整 64 字符 hash,publishOne 时写入 photos.owner_hash
 				photos: [] as PhotoView[],
 				publishing: false,
 				globalError: '',
@@ -216,7 +217,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 				async startPublish() {
 					if (this.publishing) return;
 					// 守门:必须登录,且 wizard 状态里的 artistSlug 必须等于会话绑定的
-					// slug(防止"已登录但别人手改了 localStorage identity"的情况)
+					// slug,且我们要算出完整 phoneHash 写进 photos.owner_hash
 					try {
 						const auth = requireSession();
 						if (!auth.slug) {
@@ -227,6 +228,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 							this.globalError = `当前会话绑定的是 /${auth.slug}/,但本地 identity 是 /${this.artistSlug}/ —— 不一致,拒绝发布。回身份步检查。`;
 							return;
 						}
+						this.ownerHash = await phoneHash(auth.phone);
 					} catch (e: any) {
 						this.globalError = e?.message || '需要先登录';
 						return;
@@ -267,6 +269,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 							descriptionEn: p.descriptionEn || undefined,
 						},
 						contact: this.artistContact,
+						ownerHash: this.ownerHash,
 						width: p.width,
 						height: p.height,
 						onProgress: (pct) => {

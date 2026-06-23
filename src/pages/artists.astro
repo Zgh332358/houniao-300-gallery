@@ -32,9 +32,9 @@ const base = import.meta.env.BASE_URL;
 
 			<template x-if="!loading && artists.length > 0">
 				<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-					<template x-for="a in artists" :key="a.slug">
+					<template x-for="a in artists" :key="a.href">
 						<a
-							:href="`${base}/${a.slug}/`"
+							:href="a.href"
 							class="group block border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
 						>
 							<div class="aspect-[4/3] bg-gray-100 overflow-hidden">
@@ -58,17 +58,15 @@ const base = import.meta.env.BASE_URL;
 </MainLayout>
 
 <script>
-	import { listAll, groupByArtist, deliveryUrl } from '../lib/photos';
+	import { listAll, groupByArtist, deliveryUrl, artistHref } from '../lib/photos';
 
 	function artistsListPage() {
 		return {
 			loading: true,
 			base: '',
-			artists: [] as { slug: string; name: string; photoCount: number; coverUrl: string }[],
+			artists: [] as { slug: string; name: string; photoCount: number; coverUrl: string; href: string }[],
 
 			async init() {
-				// Alpine 模板里裸用 `${base}` 默认是 scope 里的 base 字段;
-				// 不设这个字段 → 模板渲染 undefined → href 变成 "undefined/aiken/" → 404
 				this.base = (document.documentElement.dataset.base || '').replace(/\/+$/, '');
 				const all = await listAll();
 				this.artists = groupByArtist(all).map((a) => ({
@@ -76,6 +74,7 @@ const base = import.meta.env.BASE_URL;
 					name: a.name,
 					photoCount: a.photoCount,
 					coverUrl: deliveryUrl(a.coverPhoto, { width: 800 }),
+					href: artistHref({ ownerHash: a.ownerHash, slug: a.slug }, this.base),
 				}));
 				this.loading = false;
 			},

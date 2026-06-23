@@ -70,7 +70,7 @@ const base = import.meta.env.BASE_URL;
 					<div class="grid grid-cols-2 md:grid-cols-3 gap-4">
 						<template x-for="p in results" :key="p.id">
 							<a
-								:href="`${base}/${p.artistSlug}/`"
+								:href="p.artistHref"
 								class="block group"
 							>
 								<div class="aspect-square bg-gray-100 overflow-hidden rounded-lg">
@@ -95,7 +95,7 @@ const base = import.meta.env.BASE_URL;
 </MainLayout>
 
 <script>
-	import { listAll, deliveryUrl, type PhotoEntry } from '../lib/photos';
+	import { listAll, deliveryUrl, artistHref, type PhotoEntry } from '../lib/photos';
 	import {
 		searchByQuery,
 		keywordFallbackSearch,
@@ -109,6 +109,7 @@ const base = import.meta.env.BASE_URL;
 		artistName: string;
 		title: string;
 		coverUrl: string;
+		artistHref: string;
 	}
 
 	function searchPage() {
@@ -178,6 +179,7 @@ const base = import.meta.env.BASE_URL;
 						artistName: p.meta.artistName,
 						title: p.meta.title,
 						coverUrl: deliveryUrl(p, { width: 600 }),
+						artistHref: artistHref({ ownerHash: p.ownerHash, slug: p.artistSlug }, this.base),
 					}));
 				this.busy = false;
 			},

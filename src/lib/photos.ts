@@ -63,6 +63,9 @@ export interface PhotoEntry {
 	curatorNote?: string;
 	/** 内容审核结果(里程碑 E) */
 	moderation?: PhotoModeration;
+	/** 完整 SHA-256 hash,标识"这张图的发图人手机号"。
+	 *  跟 artists.phone_hash 对齐。URL 用前 8 位作短句柄,所有权判定用完整 64 字符。 */
+	ownerHash?: string;
 	/** mock-only：picsum seed 占位图 */
 	mockSeed?: string;
 	/** mock-only：用户上传的真实文件 base64（小文件） */
@@ -74,6 +77,8 @@ export interface ArtistSummary {
 	name: string;
 	coverPhoto: PhotoEntry;
 	photoCount: number;
+	/** 完整 SHA-256;同一 slug 不同 ownerHash 算独立 artist。可空(老 demo 行还没回填时) */
+	ownerHash?: string;
 }
 
 export interface CollectionSummary {
@@ -266,6 +271,8 @@ interface PhotoRow {
 	/** 迁移 0001 后新增,旧库可能缺 */
 	title_en?: string | null;
 	description_en?: string | null;
+	/** 迁移 0005 后新增,旧库可能缺 */
+	owner_hash?: string | null;
 }
 
 function rowToEntry(row: PhotoRow): PhotoEntry {
@@ -287,6 +294,7 @@ function rowToEntry(row: PhotoRow): PhotoEntry {
 	};
 	if (row.title_en) e.meta.titleEn = row.title_en;
 	if (row.description_en) e.meta.descriptionEn = row.description_en;
+	if (row.owner_hash) e.ownerHash = row.owner_hash;
 	return e;
 }
 
@@ -301,19 +309,19 @@ export async function listAll(): Promise<PhotoEntry[]> {
 
 	const sb = getClient();
 	// 显式列举公开列,避免 SELECT * 把 artist_contact 这类敏感字段带回前端。
-	// 迁移 0001 后多了 title_en / description_en;若 Supabase 还没跑迁移,
-	// 第一次查会因列不存在失败,自动回退到旧字段集,保证站点不黑屏。
+	// 迁移 0001 加了 title_en/description_en,迁移 0005 加了 owner_hash;
+	// 若 Supabase 还没跑这些迁移,SELECT 会因列不存在失败,自动回退到 BASE_COLS。
 	const BASE_COLS =
 		'id,artist_slug,artist_name,collection_slug,collection_name,title,description,storage_path,width,height,format,created_at';
-	const FULL_COLS = BASE_COLS + ',title_en,description_en';
+	const FULL_COLS = BASE_COLS + ',title_en,description_en,owner_hash';
 	let { data, error } = await sb
 		.from('photos')
 		.select(FULL_COLS)
 		.order('created_at', { ascending: false });
 	if (error) {
-		// 大概率是「title_en/description_en 列不存在」,提示一次并降级
+		// 大概率是「title_en/description_en/owner_hash 列不存在」,提示一次并降级
 		console.warn(
-			'[supabase] listAll 含双语列查询失败,回退到基本列。请到 Supabase 控制台跑 supabase/migrations/0001_*.sql。原因:',
+			'[supabase] listAll 含双语/owner_hash 列查询失败,回退到基本列。请到 Supabase 控制台跑 supabase/migrations/。原因:',
 			error.message,
 		);
 		const fallback = await sb
@@ -350,6 +358,10 @@ export async function uploadPhoto(
 		meta: PhotoMeta;
 		/** 艺术家自报联系方式。写入数据库供运营私下回联,不进任何匿名读取路径。 */
 		contact: string;
+		/** 完整 SHA-256(发图人手机号),写入 photos.owner_hash。
+		 *  没传则不写,行的 owner_hash 为 NULL —— 但这种"匿名图"无法被任何
+		 *  /<phoneHash8>/<slug>/ 路由命中,等于发出去找不到。所以调用方必须传。 */
+		ownerHash: string;
 		width: number;
 		height: number;
 		onProgress?: (pct: number) => void;
@@ -381,7 +393,7 @@ export async function uploadPhoto(
 
 	// Step 2: 写元数据行
 	const sb = getClient();
-	// 含新列(迁移 0001 之后才有的);未跑迁移时第一次 INSERT 会失败,自动回退到旧列集
+	// 含新列(迁移 0001/0005 之后才有的);未跑迁移时第一次 INSERT 会失败,自动回退到旧列集
 	const insertRow: Record<string, unknown> = {
 		artist_slug: opts.artistSlug,
 		artist_name: opts.meta.artistName,
@@ -394,6 +406,7 @@ export async function uploadPhoto(
 		width: opts.width,
 		height: opts.height,
 		format: ext,
+		owner_hash: opts.ownerHash,
 	};
 	if (opts.meta.titleEn) insertRow.title_en = opts.meta.titleEn;
 	if (opts.meta.descriptionEn) insertRow.description_en = opts.meta.descriptionEn;
@@ -461,13 +474,17 @@ function xhrUpload(
 export function groupByArtist(photos: PhotoEntry[]): ArtistSummary[] {
 	const map = new Map<string, ArtistSummary>();
 	for (const p of photos) {
-		const existing = map.get(p.artistSlug);
+		// 同 slug 不同 ownerHash 算独立 artist(两个 Given 各自一格)。
+		// ownerHash 可能为空(0005 migration 之前的旧行),用 '_legacy_' 占位免得撞别人。
+		const key = `${p.ownerHash || '_legacy_'}|${p.artistSlug}`;
+		const existing = map.get(key);
 		if (!existing) {
-			map.set(p.artistSlug, {
+			map.set(key, {
 				slug: p.artistSlug,
 				name: p.meta.artistName || p.artistSlug,
 				coverPhoto: p,
 				photoCount: 1,
+				ownerHash: p.ownerHash,
 			});
 		} else {
 			existing.photoCount += 1;
@@ -516,6 +533,18 @@ export function deliveryUrl(entry: PhotoEntry, opts: { width?: number } = {}): s
 export function srcSet(_entry: PhotoEntry): string {
 	// Supabase Free 不带 image transformations，无法生成多尺寸 srcset
 	return '';
+}
+
+/**
+ * 拼一个指向 artist page 的链接:`<base>/<phoneHash前8位>/<slug>/`
+ * 旧行没 ownerHash → 退化成只 slug 路径(老地址,迁移 0005 跑完应不存在)。
+ */
+export function artistHref(args: { ownerHash?: string; slug: string }, base: string): string {
+	const b = base.replace(/\/+$/, '');
+	if (args.ownerHash) {
+		return `${b}/${args.ownerHash.slice(0, 8)}/${args.slug}/`;
+	}
+	return `${b}/${args.slug}/`;
 }
 
 /* ---------- 删除 ---------- */

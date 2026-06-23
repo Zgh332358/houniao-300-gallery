@@ -1,14 +1,15 @@
 ---
-import MainLayout from '../layouts/MainLayout.astro';
+import MainLayout from '../../layouts/MainLayout.astro';
 import 'glightbox/dist/css/glightbox.css';
-import '../styles/glightbox-custom.css';
+import '../../styles/glightbox-custom.css';
 
 const base = import.meta.env.BASE_URL;
 
 export async function getStaticPaths() {
-	// 占位 slug：构建时无法知道艺术家列表，由 postbuild 把这个 HTML 复制成
-	// dist/404.html，所有 /<slug>/ 未知路径都 fallback 到这里，由客户端解析 URL。
-	return [{ params: { artist: '__artist__' } }];
+	// 占位:phoneHash8 + slug 都未知,由 postbuild 把这个 HTML 复制成
+	// dist/404.html,所有 /<phoneHash8>/<slug>/ 路径都 fallback 到这里,
+	// 由客户端解析 URL 决定渲染哪位艺术家。
+	return [{ params: { phone: '__phone__', slug: '__slug__' } }];
 }
 ---
 
@@ -31,7 +32,7 @@ export async function getStaticPaths() {
 				<div class="text-center py-20">
 					<h1 class="text-3xl font-bold mb-4" x-text="`没找到「${slug}」`"></h1>
 					<p class="text-gray-600 mb-8">
-						这个艺术家页还没有作品，或者 slug 拼写有误。<br />
+						这个画廊还没有作品,或者地址写错了。<br />
 						你可以去 <a :href="`${base}/upload/`" class="underline">上传页</a> 创建你自己的页面。
 					</p>
 				</div>
@@ -47,6 +48,14 @@ export async function getStaticPaths() {
 							<span x-text="photos.length"></span> 张作品 ·
 							<span x-text="collections.length"></span> 个作品集
 						</p>
+						<p class="text-xs text-gray-400 mt-2 font-mono">
+							<span x-text="phoneHash8"></span> · <span x-text="`/${slug}/`"></span>
+						</p>
+						<template x-if="isOwner">
+							<p class="mt-3 inline-block px-3 py-1 rounded-full bg-violet-100 text-violet-700 text-xs font-medium">
+								这是你自己的画廊 · 鼠标停在图上看 × 删除
+							</p>
+						</template>
 					</header>
 
 					<!-- collection 标签栏 -->
@@ -79,7 +88,7 @@ export async function getStaticPaths() {
 						</div>
 					</div>
 
-					<!-- Photo Grid 容器，由 JS 动态填充 -->
+					<!-- Photo Grid 容器,由 JS 动态填充 -->
 					<section
 						id="photo-grid"
 						class="relative w-full mx-auto overflow-hidden"
@@ -99,14 +108,15 @@ export async function getStaticPaths() {
 		srcSet,
 		deletePhoto,
 		type PhotoEntry,
-	} from '../lib/photos';
-	import { setupGallery, teardownGallery } from '../scripts/photo-grid';
-	import { getSession } from '../lib/auth';
+	} from '../../lib/photos';
+	import { setupGallery, teardownGallery } from '../../scripts/photo-grid';
+	import { getSession, phoneHash } from '../../lib/auth';
 
 	function artistPage() {
 		return {
 			loading: true,
 			slug: '',
+			phoneHash8: '',
 			base: '',
 			photos: [] as PhotoEntry[],
 			collections: [] as { slug: string; name: string }[],
@@ -116,23 +126,37 @@ export async function getStaticPaths() {
 
 			async init() {
 				this.base = (document.documentElement.dataset.base || '').replace(/\/+$/, '');
-				this.slug = parseArtistSlugFromUrl();
-				if (!this.slug) {
+				const parsed = parseFromUrl();
+				this.phoneHash8 = parsed.phone8;
+				this.slug = parsed.slug;
+				if (!this.slug || !this.phoneHash8) {
 					this.loading = false;
 					return;
 				}
-				// 是不是看自己的画廊?(荣誉系统:session 里 slug 跟当前 URL 一致就算)
-				const session = getSession();
-				this.isOwner = !!(session && session.slug && session.slug === this.slug);
 
 				const all = await listAll();
-				const mine = all.filter((p) => p.artistSlug === this.slug);
+				// 同 slug 不同 ownerHash 算独立 artist —— filter 要同时匹配 slug + ownerHash 前 8 位
+				const mine = all.filter(
+					(p) => p.artistSlug === this.slug && p.ownerHash?.startsWith(this.phoneHash8),
+				);
 				this.photos = mine;
 
 				if (mine.length > 0) {
 					this.artistName = mine[0].meta.artistName || this.slug;
 					const groups = groupByCollection(mine);
 					this.collections = groups.map((g) => ({ slug: g.slug, name: g.name }));
+
+					// owner 判定:session.phone 算完整 hash → 跟 mine[0].ownerHash 完整对比。
+					// 前 8 位匹配只够路由,完整 64 字符匹配才算真 owner。
+					const session = getSession();
+					if (session && session.phone && mine[0].ownerHash) {
+						try {
+							const myFull = await phoneHash(session.phone);
+							this.isOwner = myFull === mine[0].ownerHash;
+						} catch {
+							this.isOwner = false;
+						}
+					}
 				}
 				this.loading = false;
 				await this.$nextTick();
@@ -144,7 +168,6 @@ export async function getStaticPaths() {
 				if (!confirm('确认删除这张作品?删除后无法恢复。')) return;
 				try {
 					await deletePhoto(photoId, storagePath);
-					// 本地数组同步剔掉,然后重渲染
 					this.photos = this.photos.filter((p) => p.id !== photoId);
 					if (this.photos.length > 0) {
 						const groups = groupByCollection(this.photos);
@@ -172,24 +195,30 @@ export async function getStaticPaths() {
 		};
 	}
 
-	function parseArtistSlugFromUrl(): string {
-		// 优先 ?slug=xxx 用于 dev 预览（dev 模式没有 404 fallback）
+	function parseFromUrl(): { phone8: string; slug: string } {
+		// dev 模式 ?phone=xxx&slug=yyy 走 query,方便不开 404 fallback 时直接测
 		const params = new URLSearchParams(window.location.search);
-		const fromQuery = params.get('slug');
-		if (fromQuery) return fromQuery;
+		const fromQuery = { phone8: params.get('phone') || '', slug: params.get('slug') || '' };
+		if (fromQuery.phone8 && fromQuery.slug) return fromQuery;
 
-		// 否则从 pathname 取第一段：/<base>/<slug>/...
+		// 正常路径:/<base>/<phoneHash8>/<slug>/[...]
 		const path = window.location.pathname.replace(/\/+$/, '');
 		const baseEl = document.getElementById('artist-page');
 		const base = (baseEl?.dataset.base || '/').replace(/\/+$/, '');
 		let rest = path;
 		if (base && rest.startsWith(base)) rest = rest.slice(base.length);
 		rest = rest.replace(/^\/+/, '');
-		const seg = rest.split('/')[0] || '';
-		if (seg === '__artist__') return ''; // 占位路径
-		const reserved = new Set(['', 'about', 'collections', 'upload', 'artists']);
-		if (reserved.has(seg)) return '';
-		return seg;
+		const segs = rest.split('/');
+		const phone8 = segs[0] || '';
+		const slug = segs[1] || '';
+		if (phone8 === '__phone__' || slug === '__slug__') return { phone8: '', slug: '' };
+		// 保留字 / 单段路径不当 artist page
+		const reserved = new Set(['', 'about', 'collections', 'upload', 'artists', 'search', 'login']);
+		if (reserved.has(phone8)) return { phone8: '', slug: '' };
+		if (!slug) return { phone8: '', slug: '' }; // 只有一段(/xxx/),不是 artist page
+		// phone8 必须是 8 位 hex 字符
+		if (!/^[0-9a-f]{8}$/i.test(phone8)) return { phone8: '', slug: '' };
+		return { phone8, slug };
 	}
 
 	function renderGrid(
@@ -223,7 +252,7 @@ export async function getStaticPaths() {
 			img.className = 'w-full h-full object-cover rounded-sm shadow-sm hover:shadow-lg transition-shadow';
 			a.appendChild(img);
 
-			// 右下角 title 角标 —— 跟灯箱里底部的 description 形成对角
+			// 右下角 title 角标
 			if (p.meta.title) {
 				const tag = document.createElement('div');
 				tag.className =
@@ -232,7 +261,7 @@ export async function getStaticPaths() {
 				a.appendChild(tag);
 			}
 
-			// owner 模式:右上角 × 按钮,点了拦截灯箱 + 触发删除回调
+			// owner 模式:右上角 × 按钮
 			if (isOwner && onDelete) {
 				const btn = document.createElement('button');
 				btn.type = 'button';
@@ -242,7 +271,6 @@ export async function getStaticPaths() {
 					'photo-delete-btn absolute top-2 right-2 w-7 h-7 rounded-full bg-red-600/85 hover:bg-red-700 text-white text-base font-bold flex items-center justify-center shadow-md transition';
 				btn.textContent = '×';
 				btn.addEventListener('click', (e) => {
-					// 阻止灯箱打开 + 阻止 <a> 跳转
 					e.preventDefault();
 					e.stopPropagation();
 					onDelete(p.id, p.storagePath);

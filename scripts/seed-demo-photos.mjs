@@ -20,6 +20,7 @@
  */
 
 import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 
 // ---------------------------------------------------------------------------
 // 配置 —— Supabase 公开信息,跟 site.config.mts 里一致。anon key 本来就是
@@ -29,6 +30,13 @@ const SUPABASE_URL = 'https://efvfkoxoilkqfsuuladv.supabase.co';
 const SUPABASE_ANON =
 	'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmdmZrb3hvaWxrcWZzdXVsYWR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NzI1NDYsImV4cCI6MjA5NzM0ODU0Nn0.rLkYGFgtPmVg1xdXvZdraLTe7tYh4ZniV1HJtWEeHQY';
 const PHOTOS_BUCKET = 'photos';
+
+// 跟 src/lib/auth.ts:phoneHash 一致(normalizePhone + 'houniao300-2026' → SHA-256)
+const HASH_SALT = 'houniao300-2026';
+function phoneHashFull(phone) {
+	const normalized = phone.replace(/[\s\-()]/g, '');
+	return createHash('sha256').update(normalized + HASH_SALT).digest('hex');
+}
 
 const args = new Set(process.argv.slice(2));
 const FORCE = args.has('--force');
@@ -50,6 +58,7 @@ const ARTISTS = [
 		name: 'Lin Mo',
 		bio: '上海 / 东京两地工作。在城市的边缘找安静的瞬间。',
 		contact: 'demo: linmo@houniao300.example',
+		phone: '15555550101',
 		collection: { slug: 'night-streets', name: '深夜街道 / Night Streets' },
 		photos: [
 			{
@@ -114,6 +123,7 @@ const ARTISTS = [
 		name: 'Aiken',
 		bio: '山地徒步与海岸摄影。在地球的褶皱里找光。',
 		contact: 'demo: aiken@houniao300.example',
+		phone: '15555550102',
 		collection: { slug: 'sea-and-mountain', name: '海与山 / Sea & Mountain' },
 		photos: [
 			{
@@ -178,6 +188,7 @@ const ARTISTS = [
 		name: 'Mira Chen',
 		bio: '肖像与日常,记录身边人不经意的神情。',
 		contact: 'demo: mira@houniao300.example',
+		phone: '15555550103',
 		collection: { slug: 'unnamed-faces', name: '未署名的脸 / Unnamed Faces' },
 		photos: [
 			{
@@ -242,6 +253,7 @@ const ARTISTS = [
 		name: 'Yuki Sato',
 		bio: '极简与材质。建筑表面、几何阴影、单色构图。',
 		contact: 'demo: yuki@houniao300.example',
+		phone: '15555550104',
 		collection: { slug: 'form-and-shadow', name: '形与影 / Form & Shadow' },
 		photos: [
 			{
@@ -345,6 +357,7 @@ async function insertArtistIfNew(a) {
 			name: a.name,
 			bio: a.bio,
 			contact: a.contact,
+			phone_hash: phoneHashFull(a.phone),
 		}),
 	});
 	if (res.status === 409) return 'exists';
@@ -472,6 +485,7 @@ async function main() {
 					format: 'jpg',
 					tags: p.tags,
 					curator_note: p.curatorNote,
+					owner_hash: phoneHashFull(a.phone),
 				});
 				total++;
 				console.log('✓');
@@ -484,7 +498,11 @@ async function main() {
 
 	console.log(`\n✓ 全部完成。已 seed: ${ARTISTS.length} 位艺术家 · ${total} 张作品`);
 	console.log(`  → 刷新首页应该能看到 marquee 流动起来了`);
-	console.log(`  → 访问 /<slug>/ 看每位艺术家的页面: ${ARTISTS.map((a) => '/' + a.slug + '/').join(' · ')}`);
+	console.log(`  → 各艺术家页 URL(/<phoneHash前8>/<slug>/):`);
+	for (const a of ARTISTS) {
+		const h8 = phoneHashFull(a.phone).slice(0, 8);
+		console.log(`     /${h8}/${a.slug}/  (${a.name})`);
+	}
 }
 
 main().catch((e) => {
