@@ -480,7 +480,7 @@ export async function getStaticPaths() {
 
 			async removeOne(photoId: string, storagePath: string) {
 				if (!this.isOwner || !this.editMode) return;
-				if (!confirm('确认删除这张作品?删除后无法恢复。')) return;
+				if (!confirm('确认删除这张作品?删除后无法恢复。\n如果有动态展示用到了这张图,会自动从展示里去掉(空展示会一并删)。')) return;
 				try {
 					await deletePhoto(photoId, storagePath);
 					this.photos = this.photos.filter((p) => p.id !== photoId);
@@ -489,6 +489,17 @@ export async function getStaticPaths() {
 						this.collections = groups.map((g) => ({ slug: g.slug, name: g.name }));
 					} else {
 						this.collections = [];
+					}
+					// shows.photo_ids 由 0008 触发器在服务端级联去掉了这张图,
+					// 空 show 也被删了 —— 前端这里重拉一次拿到最新状态
+					const fullOwnerHash = this.photos[0]?.ownerHash || '';
+					if (fullOwnerHash) {
+						this.showsList = await listShows({
+							ownerHash: fullOwnerHash,
+							artistSlug: this.slug,
+						});
+					} else {
+						this.showsList = [];
 					}
 					await this.$nextTick();
 					renderGrid(this.filtered(), this.isOwner && this.editMode, (id, path) => this.removeOne(id, path));
