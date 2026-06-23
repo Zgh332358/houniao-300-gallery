@@ -52,9 +52,33 @@ export async function getStaticPaths() {
 							<span x-text="phoneHash8"></span> · <span x-text="`/${slug}/`"></span>
 						</p>
 						<template x-if="isOwner">
-							<p class="mt-3 inline-block px-3 py-1 rounded-full bg-violet-100 text-violet-700 text-xs font-medium">
-								这是你自己的画廊 · 鼠标停在图上看 × 删除
-							</p>
+							<div class="mt-4 inline-flex items-center gap-3 px-4 py-2 rounded-full bg-violet-50 border border-violet-200">
+								<span class="text-xs text-violet-700">这是你自己的画廊</span>
+								<span class="text-violet-300">|</span>
+								<!-- 编辑模式开关 -->
+								<button
+									type="button"
+									@click="toggleEditMode()"
+									class="flex items-center gap-1.5 text-xs font-medium transition-colors"
+									:class="editMode ? 'text-red-600' : 'text-gray-600 hover:text-violet-700'"
+								>
+									<span
+										class="inline-block w-8 h-4 rounded-full transition-colors relative"
+										:class="editMode ? 'bg-red-500' : 'bg-gray-300'"
+									>
+										<span
+											class="absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all"
+											:class="editMode ? 'left-4' : 'left-0.5'"
+										></span>
+									</span>
+									<span x-text="editMode ? '编辑模式 (点图右上 × 删除)' : '编辑模式 (开启后才能删图)'"></span>
+								</button>
+								<span class="text-violet-300">|</span>
+								<a
+									:href="`${base}/upload/setup/`"
+									class="text-xs text-violet-700 hover:underline"
+								>+ 上传新作品</a>
+							</div>
 						</template>
 					</header>
 
@@ -123,6 +147,7 @@ export async function getStaticPaths() {
 			activeColl: null as string | null,
 			artistName: '',
 			isOwner: false,
+			editMode: false, // 默认只读;owner 点开关才能改/删
 
 			async init() {
 				this.base = (document.documentElement.dataset.base || '').replace(/\/+$/, '');
@@ -160,11 +185,11 @@ export async function getStaticPaths() {
 				}
 				this.loading = false;
 				await this.$nextTick();
-				renderGrid(this.filtered(), this.isOwner, (id, path) => this.removeOne(id, path));
+				renderGrid(this.filtered(), this.isOwner && this.editMode, (id, path) => this.removeOne(id, path));
 			},
 
 			async removeOne(photoId: string, storagePath: string) {
-				if (!this.isOwner) return;
+				if (!this.isOwner || !this.editMode) return;
 				if (!confirm('确认删除这张作品?删除后无法恢复。')) return;
 				try {
 					await deletePhoto(photoId, storagePath);
@@ -176,7 +201,7 @@ export async function getStaticPaths() {
 						this.collections = [];
 					}
 					await this.$nextTick();
-					renderGrid(this.filtered(), this.isOwner, (id, path) => this.removeOne(id, path));
+					renderGrid(this.filtered(), this.isOwner && this.editMode, (id, path) => this.removeOne(id, path));
 				} catch (e: any) {
 					alert(e?.message || '删除失败,稍后再试');
 				}
@@ -190,7 +215,15 @@ export async function getStaticPaths() {
 			async selectCollection(coll: string | null) {
 				this.activeColl = coll;
 				await this.$nextTick();
-				renderGrid(this.filtered(), this.isOwner, (id, path) => this.removeOne(id, path));
+				renderGrid(this.filtered(), this.isOwner && this.editMode, (id, path) => this.removeOne(id, path));
+			},
+
+			async toggleEditMode() {
+				if (!this.isOwner) return;
+				this.editMode = !this.editMode;
+				// 切换后重渲染让 × 按钮出现/消失
+				await this.$nextTick();
+				renderGrid(this.filtered(), this.isOwner && this.editMode, (id, path) => this.removeOne(id, path));
 			},
 		};
 	}
