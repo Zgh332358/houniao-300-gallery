@@ -13,18 +13,24 @@ const base = import.meta.env.BASE_URL;
 	>
 		<div class="container-custom max-w-3xl mx-auto px-4">
 			<header class="text-center mb-10">
-				<h1 class="text-4xl md:text-5xl font-bold mb-3">找作品</h1>
+				<h1 class="text-4xl md:text-5xl font-bold mb-3">
+					<span class="inline-block">🔮</span> 找作品
+				</h1>
 				<p class="text-gray-600">
-					用一句话描述你想看的:主题、情绪、色调、媒介 —— AI 帮你从所有作品里找。
+					用一句话描述你想看的:主题、情绪、色调、媒介 ——
+					<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-100 text-violet-700 font-mono text-sm">
+						Step 3.7
+					</span>
+					帮你从所有作品里找。
 				</p>
 			</header>
 
-			<form @submit.prevent="run()" class="mb-8">
+			<form @submit.prevent="run()" class="mb-6">
 				<div class="flex gap-2">
 					<input
 						type="text"
 						x-model="query"
-						placeholder="比如:雨后街拍 / 表达孤独的肖像 / 高对比的黑白"
+						:placeholder="placeholder"
 						class="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-base focus:outline-none focus:border-black"
 					/>
 					<button
@@ -45,6 +51,55 @@ const base = import.meta.env.BASE_URL;
 					顶部「AI 助手」处填入,搜索精度更高。
 				</p>
 			</form>
+
+			<!-- ✨ 试试这些:从池子里随机选 6 条,每次刷新换一拨 -->
+			<template x-if="examples.length > 0">
+				<div class="mb-8">
+					<div class="flex items-center gap-2 mb-2">
+						<span class="text-sm font-semibold">✨ 试试这些</span>
+						<button
+							type="button"
+							@click="pickExamples()"
+							class="text-xs text-gray-400 hover:text-violet-600"
+							title="换一批"
+						>🎲 换一批</button>
+					</div>
+					<div class="flex flex-wrap gap-2">
+						<template x-for="ex in examples" :key="ex">
+							<button
+								type="button"
+								@click="useExample(ex)"
+								class="px-3 py-1.5 rounded-full bg-gradient-to-br from-violet-50 to-violet-100 text-violet-800 text-sm hover:from-violet-100 hover:to-violet-200 border border-violet-200 transition-all hover:scale-105"
+								x-text="ex"
+							></button>
+						</template>
+					</div>
+				</div>
+			</template>
+
+			<!-- 🏷️ 标签云:按 5 维分组,点了把那个词填进 query 跑搜索 -->
+			<template x-if="tagDims.some((d) => d.values.length > 0)">
+				<div class="mb-10">
+					<div class="text-sm font-semibold mb-3">🏷️ 浏览全部标签</div>
+					<div class="space-y-2">
+						<template x-for="d in tagDims" :key="d.key">
+							<div x-show="d.values.length > 0" class="flex flex-wrap items-baseline gap-2">
+								<span class="text-xs text-gray-500 w-12 flex-shrink-0" x-text="`${d.emoji} ${d.label}`"></span>
+								<div class="flex flex-wrap gap-1.5">
+									<template x-for="v in d.values" :key="v">
+										<button
+											type="button"
+											@click="useTag(v)"
+											:class="`px-2.5 py-1 rounded-full text-xs transition-all hover:scale-105 ${d.color}`"
+											x-text="v"
+										></button>
+									</template>
+								</div>
+							</div>
+						</template>
+					</div>
+				</div>
+			</template>
 
 			<!-- 错误 -->
 			<div
@@ -112,28 +167,89 @@ const base = import.meta.env.BASE_URL;
 		artistHref: string;
 	}
 
+	interface TagDim {
+		key: 'theme' | 'style' | 'medium' | 'palette' | 'mood';
+		label: string;
+		emoji: string;
+		color: string;
+		values: string[];
+	}
+
+	// 试试这些 —— 15 条预设池,每次刷新 / 点🎲 随机选 6 条露出
+	const EXAMPLES_POOL = [
+		'雨后的便利店',
+		'深夜地铁车窗的反射',
+		'黑白几何阴影',
+		'看一会儿想哭的肖像',
+		'高对比度黑白胶片',
+		'梦境般的色块',
+		'宁静的雪山日出',
+		'城市边缘的孤独',
+		'镜中的两个自己',
+		'建筑表面的折射',
+		'潮间带退潮的礁石',
+		'山地徒步遇到的光',
+		'咖啡馆 35mm 的诚实',
+		'正午楼梯切出的三角',
+		'弄堂里的一盏白炽灯',
+	];
+
+	function pickRandom<T>(arr: readonly T[], n: number): T[] {
+		const copy = [...arr];
+		// Fisher–Yates shuffle 取前 n 个
+		for (let i = copy.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[copy[i], copy[j]] = [copy[j], copy[i]];
+		}
+		return copy.slice(0, n);
+	}
+
 	function searchPage() {
 		return {
 			query: '',
 			busy: false,
 			ranAt: 0,
 			base: '',
+			placeholder: '比如:雨后街拍 / 表达孤独的肖像 / 高对比的黑白',
 			results: [] as ResultItem[],
 			usedFallback: false,
 			errorMsg: '',
 			aiOn: false,
 			_all: [] as PhotoEntry[],
+			examples: [] as string[],
+			tagDims: [] as TagDim[],
 
 			async init() {
 				this.base = (document.documentElement.dataset.base || '').replace(/\/+$/, '');
 				this.aiOn = hasAiKey();
 				this._all = await listAll();
+				this.pickExamples();
+				this.tagDims = aggregateTags(this._all);
+				// 随机挑一个 example 当 placeholder,比硬编码"雨后街拍"更鲜活
+				if (this.examples.length > 0) {
+					this.placeholder = `比如:${this.examples[0]}`;
+				}
 				// 支持从其他页带 ?q=xxx 进来
 				const qs = new URLSearchParams(window.location.search).get('q');
 				if (qs) {
 					this.query = qs;
 					this.run();
 				}
+			},
+
+			pickExamples() {
+				this.examples = pickRandom(EXAMPLES_POOL, 6);
+			},
+
+			useExample(s: string) {
+				this.query = s;
+				this.run();
+			},
+
+			useTag(s: string) {
+				// 标签点了直接替换 query 跑搜索;想组合多个标签自己在输入框里加词
+				this.query = s;
+				this.run();
 			},
 
 			async run() {
@@ -160,7 +276,7 @@ const base = import.meta.env.BASE_URL;
 					if (r.ok) {
 						ids = r.ids;
 					} else {
-						this.errorMsg = `AI 检索失败,改用关键词降级搜索: ${r.error}`;
+						this.errorMsg = `Step 3.7 检索失败,改用关键词降级搜索: ${r.error}`;
 						ids = keywordFallbackSearch(q, items);
 						this.usedFallback = true;
 					}
@@ -184,6 +300,29 @@ const base = import.meta.env.BASE_URL;
 				this.busy = false;
 			},
 		};
+	}
+
+	/**
+	 * 从所有 photos 聚合 5 维 tags,每个维度去重 + 按字母排序,
+	 * 返回 [{key, label, emoji, color, values:[...]}, ...] 给模板 x-for。
+	 */
+	function aggregateTags(photos: PhotoEntry[]): TagDim[] {
+		const dims: { key: TagDim['key']; label: string; emoji: string; color: string }[] = [
+			{ key: 'theme', label: '主题', emoji: '🎨', color: 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100' },
+			{ key: 'style', label: '风格', emoji: '🖼️', color: 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100' },
+			{ key: 'medium', label: '媒介', emoji: '📷', color: 'bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100' },
+			{ key: 'palette', label: '色调', emoji: '🌈', color: 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100' },
+			{ key: 'mood', label: '情绪', emoji: '💭', color: 'bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100' },
+		];
+		return dims.map((d) => {
+			const set = new Set<string>();
+			for (const p of photos) {
+				const v = p.tags?.[d.key];
+				if (v && typeof v === 'string') set.add(v.trim());
+			}
+			set.delete('');
+			return { ...d, values: Array.from(set).sort() };
+		});
 	}
 
 	(window as any).searchPage = searchPage;
