@@ -4,7 +4,7 @@
 </h1> <p class="text-sm md:text-base text-gray-600">
 用一句话描述你想看的:主题、情绪、色调、媒介 ——
 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-100 text-violet-700 font-mono text-sm">
-Step 3.7
+Step 3.7 Flash
 </span>
 帮你从所有作品里找。
 </p> </header> <form @submit.prevent="run()" class="mb-4 md:mb-6"> <div class="flex gap-2"> <input type="text" x-model="query" :placeholder="placeholder" class="flex-1 min-w-0 px-3 md:px-4 py-2.5 md:py-3 border border-gray-300 rounded-lg text-sm md:text-base focus:outline-none focus:border-black"> <button type="submit" :disabled="busy || !query.trim()" class="px-5 md:px-6 py-2.5 md:py-3 bg-black text-white rounded-lg font-medium hover:bg-violet-600 disabled:bg-gray-300 disabled:cursor-not-allowed flex-shrink-0"> <span x-show="!busy">搜</span> <span x-show="busy">...</span> </button> </div> <p x-show="!aiOn && query" class="text-xs text-amber-700 mt-2">
