@@ -12,139 +12,393 @@ const base = import.meta.env.BASE_URL;
 		data-base={base}
 	>
 		<div class="container-custom max-w-3xl mx-auto px-4">
-			<header class="text-center mb-10">
-				<h1 class="text-4xl md:text-5xl font-bold mb-3">
-					<span class="inline-block">🔮</span> 找作品
-				</h1>
-				<p class="text-gray-600">
-					用一句话描述你想看的:主题、情绪、色调、媒介 ——
-					<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-100 text-violet-700 font-mono text-sm">
-						Step 3.7
-					</span>
-					帮你从所有作品里找。
-				</p>
-			</header>
 
-			<form @submit.prevent="run()" class="mb-6">
-				<div class="flex gap-2">
-					<input
-						type="text"
-						x-model="query"
-						:placeholder="placeholder"
-						class="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-base focus:outline-none focus:border-black"
-					/>
-					<button
-						type="submit"
-						:disabled="busy || !query.trim()"
-						class="px-6 py-3 bg-black text-white rounded-lg font-medium hover:bg-violet-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
-					>
-						<span x-show="!busy">搜</span>
-						<span x-show="busy">...</span>
-					</button>
-				</div>
-				<p
-					x-show="!aiOn && query"
-					class="text-xs text-amber-700 mt-2"
-				>
-					未填 Step API Key,会走关键词降级搜索;在
-					<a :href="`${base}/upload/`" class="underline">/upload</a>
-					顶部「AI 助手」处填入,搜索精度更高。
-				</p>
-			</form>
+			<!-- ====== Step 1: 搜索 ====== -->
+			<template x-if="step === 'search'">
+				<div>
+					<header class="text-center mb-6 md:mb-10">
+						<h1 class="text-3xl md:text-5xl font-bold mb-2 md:mb-3">
+							<span class="inline-block">🔮</span> 找作品
+						</h1>
+						<p class="text-sm md:text-base text-gray-600">
+							用一句话描述你想看的:主题、情绪、色调、媒介 ——
+							<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-100 text-violet-700 font-mono text-sm">
+								Step 3.7
+							</span>
+							帮你从所有作品里找。
+						</p>
+					</header>
 
-			<!-- ✨ 试试这些:从池子里随机选 6 条,每次刷新换一拨 -->
-			<template x-if="examples.length > 0">
-				<div class="mb-8">
-					<div class="flex items-center gap-2 mb-2">
-						<span class="text-sm font-semibold">✨ 试试这些</span>
-						<button
-							type="button"
-							@click="pickExamples()"
-							class="text-xs text-gray-400 hover:text-violet-600"
-							title="换一批"
-						>🎲 换一批</button>
-					</div>
-					<div class="flex flex-wrap gap-2">
-						<template x-for="ex in examples" :key="ex">
+					<form @submit.prevent="run()" class="mb-4 md:mb-6">
+						<div class="flex gap-2">
+							<input
+								type="text"
+								x-model="query"
+								:placeholder="placeholder"
+								class="flex-1 min-w-0 px-3 md:px-4 py-2.5 md:py-3 border border-gray-300 rounded-lg text-sm md:text-base focus:outline-none focus:border-black"
+							/>
 							<button
-								type="button"
-								@click="useExample(ex)"
-								class="px-3 py-1.5 rounded-full bg-gradient-to-br from-violet-50 to-violet-100 text-violet-800 text-sm hover:from-violet-100 hover:to-violet-200 border border-violet-200 transition-all hover:scale-105"
-								x-text="ex"
-							></button>
-						</template>
+								type="submit"
+								:disabled="busy || !query.trim()"
+								class="px-5 md:px-6 py-2.5 md:py-3 bg-black text-white rounded-lg font-medium hover:bg-violet-600 disabled:bg-gray-300 disabled:cursor-not-allowed flex-shrink-0"
+							>
+								<span x-show="!busy">搜</span>
+								<span x-show="busy">...</span>
+							</button>
+						</div>
+						<p
+							x-show="!aiOn && query"
+							class="text-xs text-amber-700 mt-2"
+						>
+							未填 Step API Key,会走关键词降级搜索;在
+							<a :href="`${base}/upload/`" class="underline">/upload</a>
+							顶部「AI 助手」处填入,搜索精度更高。
+						</p>
+					</form>
+
+					<!-- ✨ 试试这些 -->
+					<template x-if="examples.length > 0">
+						<div class="mb-8">
+							<div class="flex items-center gap-2 mb-2">
+								<span class="text-sm font-semibold">✨ 试试这些</span>
+								<button
+									type="button"
+									@click="pickExamples()"
+									class="text-xs text-gray-400 hover:text-violet-600"
+									title="换一批"
+								>🎲 换一批</button>
+							</div>
+							<div class="flex flex-wrap gap-2">
+								<template x-for="ex in examples" :key="ex">
+									<button
+										type="button"
+										@click="useExample(ex)"
+										class="px-3 py-1.5 rounded-full bg-gradient-to-br from-violet-50 to-violet-100 text-violet-800 text-sm hover:from-violet-100 hover:to-violet-200 border border-violet-200 transition-all hover:scale-105"
+										x-text="ex"
+									></button>
+								</template>
+							</div>
+						</div>
+					</template>
+
+					<!-- 🏷️ 标签云 -->
+					<template x-if="tagDims.some((d) => d.values.length > 0)">
+						<div class="mb-10">
+							<div class="text-sm font-semibold mb-3">🏷️ 浏览全部标签</div>
+							<div class="space-y-2">
+								<template x-for="d in tagDims" :key="d.key">
+									<div x-show="d.values.length > 0" class="flex flex-wrap items-baseline gap-2">
+										<span class="text-xs text-gray-500 w-12 flex-shrink-0" x-text="`${d.emoji} ${d.label}`"></span>
+										<div class="flex flex-wrap gap-1.5">
+											<template x-for="v in d.values" :key="v">
+												<button
+													type="button"
+													@click="useTag(v)"
+													:class="`px-2.5 py-1 rounded-full text-xs transition-all hover:scale-105 ${d.color}`"
+													x-text="v"
+												></button>
+											</template>
+										</div>
+									</div>
+								</template>
+							</div>
+						</div>
+					</template>
+
+					<!-- 错误 -->
+					<div
+						x-show="errorMsg"
+						class="mb-6 p-3 border border-amber-200 bg-amber-50 text-amber-900 rounded text-sm"
+					>
+						<span x-text="errorMsg"></span>
 					</div>
+
+					<!-- 结果为空 -->
+					<template x-if="ranAt && !busy && results.length === 0">
+						<div class="text-center py-16 text-gray-400">
+							没找到匹配的作品。换个词试试?
+						</div>
+					</template>
+
+					<!-- 搜索结果(可选图) -->
+					<template x-if="results.length > 0">
+						<div :class="selected.size > 0 ? 'pb-20' : ''">
+							<div class="flex items-center justify-between mb-4">
+								<p class="text-sm text-gray-500">
+									<span x-show="usedFallback" class="text-amber-700">关键词降级:</span>
+									共 <span x-text="results.length"></span> 件
+								</p>
+								<div class="flex items-center gap-3">
+									<span
+										x-show="selected.size > 0"
+										class="text-sm text-violet-600 font-medium"
+										x-text="`已选 ${selected.size} 张`"
+									></span>
+									<button
+										x-show="selected.size > 0"
+										@click="goToCopywriting()"
+										:disabled="!aiOn"
+										class="px-4 py-2 bg-violet-600 text-white text-sm rounded-lg font-medium hover:bg-violet-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+									>
+										生成文案 ✨
+									</button>
+								</div>
+							</div>
+							<p x-show="!aiOn && selected.size > 0" class="text-xs text-amber-700 mb-3">
+								需要先在 <a :href="`${base}/upload/`" class="underline">/upload</a> 填入 Step API Key 才能使用文案生成功能。
+							</p>
+							<p x-show="results.length > 0 && selected.size === 0" class="text-xs text-gray-400 mb-3">
+								点击图片选择,选好后点「生成文案」为你写朋友圈 / 小红书文案
+							</p>
+							<div class="grid grid-cols-2 md:grid-cols-3 gap-2.5 md:gap-4">
+								<template x-for="p in results" :key="p.id">
+									<div
+										@click="toggleSelect(p.id)"
+										class="block group cursor-pointer active:scale-[0.97] transition-transform"
+									>
+										<div
+											class="aspect-square bg-gray-100 overflow-hidden rounded-lg relative border-2 transition-all"
+											:class="selected.has(p.id) ? 'border-violet-500 ring-2 ring-violet-200' : 'border-transparent'"
+										>
+											<img
+												:src="p.coverUrl"
+												:alt="p.title || ''"
+												class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+												loading="lazy"
+											/>
+											<!-- 选中角标 -->
+											<div
+												x-show="selected.has(p.id)"
+												class="absolute top-1.5 right-1.5 md:top-2 md:right-2 w-6 h-6 md:w-7 md:h-7 bg-violet-600 rounded-full flex items-center justify-center text-white text-xs md:text-sm font-bold shadow"
+											>✓</div>
+											<!-- 未选中提示:手机端始终显示,桌面端 hover 显示 -->
+											<div
+												x-show="!selected.has(p.id)"
+												class="absolute top-1.5 right-1.5 md:top-2 md:right-2 w-6 h-6 md:w-7 md:h-7 bg-white/60 backdrop-blur rounded-full flex items-center justify-center text-gray-400 text-xs md:text-sm border border-gray-200 opacity-60 md:opacity-0 group-hover:opacity-100 transition-opacity"
+											>+</div>
+										</div>
+										<div class="mt-1.5 md:mt-2">
+											<p class="text-xs md:text-sm font-medium truncate" x-text="p.title || '无题'"></p>
+											<p class="text-[11px] md:text-xs text-gray-500 truncate" x-text="p.artistName"></p>
+										</div>
+									</div>
+								</template>
+							</div>
+
+							<!-- 底部悬浮选择栏 -->
+							<div
+								x-show="selected.size > 0"
+								x-transition
+								class="fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-md bg-black/90 backdrop-blur text-white px-4 md:px-6 py-2.5 md:py-3 rounded-full shadow-xl flex items-center justify-between gap-3 z-30"
+								style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom));"
+							>
+								<div class="flex items-center gap-2">
+									<span class="text-sm" x-text="`已选 ${selected.size} 张`"></span>
+									<button
+										@click="selected = new Set()"
+										class="text-xs text-gray-300 hover:text-white"
+									>清空</button>
+								</div>
+								<button
+									@click="goToCopywriting()"
+									:disabled="!aiOn"
+									class="px-4 py-1.5 bg-violet-500 rounded-full text-sm font-medium hover:bg-violet-400 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+								>
+									生成文案 ✨
+								</button>
+							</div>
+						</div>
+					</template>
 				</div>
 			</template>
 
-			<!-- 🏷️ 标签云:按 5 维分组,点了把那个词填进 query 跑搜索 -->
-			<template x-if="tagDims.some((d) => d.values.length > 0)">
-				<div class="mb-10">
-					<div class="text-sm font-semibold mb-3">🏷️ 浏览全部标签</div>
-					<div class="space-y-2">
-						<template x-for="d in tagDims" :key="d.key">
-							<div x-show="d.values.length > 0" class="flex flex-wrap items-baseline gap-2">
-								<span class="text-xs text-gray-500 w-12 flex-shrink-0" x-text="`${d.emoji} ${d.label}`"></span>
-								<div class="flex flex-wrap gap-1.5">
-									<template x-for="v in d.values" :key="v">
-										<button
-											type="button"
-											@click="useTag(v)"
-											:class="`px-2.5 py-1 rounded-full text-xs transition-all hover:scale-105 ${d.color}`"
-											x-text="v"
-										></button>
-									</template>
-								</div>
+			<!-- ====== Step 2: 文案生成 + 对话修改 ====== -->
+			<template x-if="step === 'copywriting'">
+				<div>
+					<div class="flex items-center gap-3 mb-4 md:mb-6">
+						<button @click="backToSearch()" class="text-gray-400 hover:text-black text-sm">← 返回搜索</button>
+						<h2 class="text-lg md:text-xl font-bold">文案工坊</h2>
+					</div>
+
+					<!-- 选中的图片缩略 -->
+					<div class="flex gap-1.5 md:gap-2 mb-4 md:mb-6 overflow-x-auto pb-2 -mx-1 px-1">
+						<template x-for="p in selectedPhotos" :key="p.id">
+							<div class="w-12 h-12 md:w-16 md:h-16 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
+								<img :src="p.coverUrl" :alt="p.title || ''" class="w-full h-full object-cover" />
 							</div>
 						</template>
 					</div>
-				</div>
-			</template>
 
-			<!-- 错误 -->
-			<div
-				x-show="errorMsg"
-				class="mb-6 p-3 border border-amber-200 bg-amber-50 text-amber-900 rounded text-sm"
-			>
-				<span x-text="errorMsg"></span>
-			</div>
+					<!-- 生成中 -->
+					<div x-show="generating" class="text-center py-12 md:py-16">
+						<div class="inline-block w-8 h-8 border-2 border-violet-400 border-t-transparent rounded-full animate-spin mb-4"></div>
+						<p class="text-sm md:text-base text-gray-500">正在识别图片并生成文案…</p>
+						<p class="text-xs text-gray-400 mt-1">Step 3.7 Flash 图像识别中,通常需要 5~15 秒</p>
+					</div>
 
-			<!-- 结果 -->
-			<template x-if="ranAt && !busy && results.length === 0">
-				<div class="text-center py-16 text-gray-400">
-					没找到匹配的作品。换个词试试?
-				</div>
-			</template>
+					<!-- 错误 -->
+					<div
+						x-show="copyError"
+						class="mb-6 p-3 border border-red-200 bg-red-50 text-red-700 rounded text-sm"
+					>
+						<span x-text="copyError"></span>
+						<button @click="retryCopy()" class="ml-2 underline">重试</button>
+					</div>
 
-			<template x-if="results.length > 0">
-				<div>
-					<p class="text-sm text-gray-500 mb-4">
-						<span x-show="usedFallback" class="text-amber-700">关键词降级:</span>
-						共 <span x-text="results.length"></span> 件
-					</p>
-					<div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-						<template x-for="p in results" :key="p.id">
-							<a
-								:href="p.artistHref"
-								class="block group"
-							>
-								<div class="aspect-square bg-gray-100 overflow-hidden rounded-lg">
-									<img
-										:src="p.coverUrl"
-										:alt="p.title || ''"
-										class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-										loading="lazy"
+					<!-- 文案结果 -->
+					<template x-if="socialCopy && !generating">
+						<div>
+							<!-- 朋友圈 -->
+							<div class="mb-4 md:mb-6 p-3 md:p-4 bg-green-50 border border-green-200 rounded-xl">
+								<div class="flex items-center justify-between mb-2">
+									<h3 class="text-sm font-bold text-green-800">💬 朋友圈文案</h3>
+								</div>
+								<p class="text-sm md:text-base text-gray-800 whitespace-pre-wrap leading-relaxed" x-text="socialCopy.wechat"></p>
+							</div>
+
+							<!-- 小红书 -->
+							<div class="mb-4 md:mb-6 p-3 md:p-4 bg-red-50 border border-red-200 rounded-xl">
+								<div class="flex items-center justify-between mb-2">
+									<h3 class="text-sm font-bold text-red-700">📕 小红书文案</h3>
+								</div>
+								<p class="font-bold text-sm md:text-base mb-2" x-text="socialCopy.xiaohongshu.title"></p>
+								<p class="text-gray-800 whitespace-pre-wrap leading-relaxed text-xs md:text-sm mb-3" x-text="socialCopy.xiaohongshu.body"></p>
+								<div class="flex flex-wrap gap-1 md:gap-1.5">
+									<template x-for="tag in socialCopy.xiaohongshu.tags" :key="tag">
+										<span class="px-2 py-0.5 bg-red-100 text-red-600 rounded text-xs" x-text="tag"></span>
+									</template>
+								</div>
+							</div>
+
+							<!-- 对话区域 -->
+							<div class="mb-4 border border-gray-200 rounded-xl overflow-hidden">
+								<div class="bg-gray-50 px-3 md:px-4 py-2 border-b border-gray-200">
+									<h3 class="text-xs md:text-sm font-semibold text-gray-600">💬 修改文案</h3>
+								</div>
+								<div class="max-h-48 md:max-h-60 overflow-y-auto p-3 md:p-4 space-y-2.5 md:space-y-3" x-ref="chatBox">
+									<template x-for="(msg, i) in chatMessages" :key="i">
+										<div :class="msg.role === 'user' ? 'text-right' : 'text-left'">
+											<span
+												:class="msg.role === 'user'
+													? 'inline-block bg-violet-100 text-violet-900 px-3 py-1.5 rounded-xl rounded-tr-sm text-xs md:text-sm max-w-[85%] text-left'
+													: 'inline-block bg-gray-100 text-gray-800 px-3 py-1.5 rounded-xl rounded-tl-sm text-xs md:text-sm max-w-[85%] text-left'"
+												x-text="msg.content"
+											></span>
+										</div>
+									</template>
+									<div x-show="revising" class="text-left">
+										<span class="inline-block bg-gray-100 text-gray-400 px-3 py-1.5 rounded-xl rounded-tl-sm text-xs md:text-sm">
+											思考中…
+										</span>
+									</div>
+								</div>
+								<div class="border-t border-gray-200 p-2 md:p-3 flex gap-2">
+									<input
+										type="text"
+										x-model="chatInput"
+										@keydown.enter.prevent="sendRevise()"
+										placeholder="说说你想怎么改…"
+										class="flex-1 min-w-0 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-violet-400"
+										:disabled="revising"
 									/>
+									<button
+										@click="sendRevise()"
+										:disabled="revising || !chatInput.trim()"
+										class="px-3 md:px-4 py-2 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+									>发送</button>
 								</div>
-								<div class="mt-2">
-									<p class="text-sm font-medium truncate" x-text="p.title || '无题'"></p>
-									<p class="text-xs text-gray-500 truncate" x-text="p.artistName"></p>
+							</div>
+
+							<!-- 确认按钮 -->
+							<div class="flex justify-center pb-4">
+								<button
+									@click="confirmCopy()"
+									class="w-full md:w-auto px-8 py-3 bg-black text-white rounded-xl font-medium hover:bg-violet-600 transition-colors text-sm md:text-base"
+								>
+									确认文案，去导出 →
+								</button>
+							</div>
+						</div>
+					</template>
+				</div>
+			</template>
+
+			<!-- ====== Step 3: 导出 ====== -->
+			<template x-if="step === 'export'">
+				<div>
+					<div class="flex items-center gap-3 mb-4 md:mb-6">
+						<button @click="step = 'copywriting'" class="text-gray-400 hover:text-black text-sm">← 返回修改</button>
+						<h2 class="text-lg md:text-xl font-bold">导出文案 & 图片</h2>
+					</div>
+
+					<!-- 朋友圈导出 -->
+					<div class="mb-5 md:mb-8 p-3 md:p-5 bg-green-50 border border-green-200 rounded-xl">
+						<div class="flex items-center justify-between mb-2 md:mb-3">
+							<h3 class="text-sm md:text-base font-bold text-green-800">💬 朋友圈文案</h3>
+							<button
+								@click="copyText(socialCopy.wechat, $event)"
+								class="px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 active:bg-green-800 transition-colors"
+							>复制文案</button>
+						</div>
+						<div class="bg-white rounded-lg p-3 md:p-4 text-sm md:text-base text-gray-800 whitespace-pre-wrap leading-relaxed select-all" x-text="socialCopy.wechat"></div>
+					</div>
+
+					<!-- 小红书导出 -->
+					<div class="mb-5 md:mb-8 p-3 md:p-5 bg-red-50 border border-red-200 rounded-xl">
+						<div class="flex items-center justify-between mb-2 md:mb-3">
+							<h3 class="text-sm md:text-base font-bold text-red-700">📕 小红书文案</h3>
+							<button
+								@click="copyText(xhsFullText(), $event)"
+								class="px-3 py-1.5 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600 active:bg-red-700 transition-colors"
+							>复制全部</button>
+						</div>
+						<div class="bg-white rounded-lg p-3 md:p-4 space-y-2 md:space-y-3 select-all">
+							<p class="font-bold text-sm md:text-base" x-text="socialCopy.xiaohongshu.title"></p>
+							<p class="text-gray-800 whitespace-pre-wrap leading-relaxed text-xs md:text-sm" x-text="socialCopy.xiaohongshu.body"></p>
+							<p class="text-xs md:text-sm text-red-500" x-text="socialCopy.xiaohongshu.tags.join(' ')"></p>
+						</div>
+					</div>
+
+					<!-- 图片下载 -->
+					<div class="mb-6 md:mb-8">
+						<div class="flex items-center justify-between mb-2 md:mb-3">
+							<h3 class="text-sm md:text-base font-bold text-gray-800">🖼️ 选中的图片</h3>
+							<span class="text-[11px] md:text-xs text-gray-400">长按图片可保存</span>
+						</div>
+						<div class="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
+							<template x-for="(p, i) in selectedPhotos" :key="p.id">
+								<div class="rounded-xl overflow-hidden bg-gray-100">
+									<img
+										:src="p.fullUrl"
+										:alt="p.title || ''"
+										class="w-full object-cover"
+									/>
+									<div class="p-1.5 md:p-2 flex items-center justify-between">
+										<span class="text-[11px] md:text-xs text-gray-500 truncate" x-text="p.title || '无题'"></span>
+										<a
+											:href="p.fullUrl"
+											:download="`候鸟300-${i + 1}.jpg`"
+											target="_blank"
+											class="text-[11px] md:text-xs text-violet-600 hover:text-violet-800 active:text-violet-900 font-medium flex-shrink-0 ml-1.5"
+										>保存</a>
+									</div>
 								</div>
-							</a>
-						</template>
+							</template>
+						</div>
+					</div>
+
+					<!-- 重新开始 -->
+					<div class="text-center pt-2 pb-8">
+						<button
+							@click="resetAll()"
+							class="w-full md:w-auto px-6 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm hover:bg-gray-50 active:bg-gray-100 transition-colors"
+						>
+							重新搜索
+						</button>
 					</div>
 				</div>
 			</template>
+
 		</div>
 	</section>
 </MainLayout>
@@ -155,7 +409,11 @@ const base = import.meta.env.BASE_URL;
 		searchByQuery,
 		keywordFallbackSearch,
 		hasAiKey,
+		generateSocialCopy,
+		reviseSocialCopy,
+		urlToDataUrl,
 		type SearchableArtwork,
+		type SocialCopy,
 	} from '../lib/ai';
 
 	interface ResultItem {
@@ -164,6 +422,7 @@ const base = import.meta.env.BASE_URL;
 		artistName: string;
 		title: string;
 		coverUrl: string;
+		fullUrl: string;
 		artistHref: string;
 	}
 
@@ -175,7 +434,11 @@ const base = import.meta.env.BASE_URL;
 		values: string[];
 	}
 
-	// 试试这些 —— 15 条预设池,每次刷新 / 点🎲 随机选 6 条露出
+	interface ChatMsg {
+		role: 'user' | 'assistant';
+		content: string;
+	}
+
 	const EXAMPLES_POOL = [
 		'雨后的便利店',
 		'深夜地铁车窗的反射',
@@ -196,7 +459,6 @@ const base = import.meta.env.BASE_URL;
 
 	function pickRandom<T>(arr: readonly T[], n: number): T[] {
 		const copy = [...arr];
-		// Fisher–Yates shuffle 取前 n 个
 		for (let i = copy.length - 1; i > 0; i--) {
 			const j = Math.floor(Math.random() * (i + 1));
 			[copy[i], copy[j]] = [copy[j], copy[i]];
@@ -206,18 +468,36 @@ const base = import.meta.env.BASE_URL;
 
 	function searchPage() {
 		return {
+			// 共用状态
+			step: 'search' as 'search' | 'copywriting' | 'export',
+			base: '',
+			aiOn: false,
+			_all: [] as PhotoEntry[],
+			errorMsg: '',
+
+			// 搜索态
 			query: '',
 			busy: false,
 			ranAt: 0,
-			base: '',
 			placeholder: '比如:雨后街拍 / 表达孤独的肖像 / 高对比的黑白',
 			results: [] as ResultItem[],
 			usedFallback: false,
-			errorMsg: '',
-			aiOn: false,
-			_all: [] as PhotoEntry[],
 			examples: [] as string[],
 			tagDims: [] as TagDim[],
+			selected: new Set<string>(),
+
+			// 文案态
+			generating: false,
+			copyError: '',
+			socialCopy: null as SocialCopy | null,
+			chatHistory: [] as any[],
+			chatMessages: [] as ChatMsg[],
+			chatInput: '',
+			revising: false,
+
+			get selectedPhotos(): ResultItem[] {
+				return this.results.filter((p: ResultItem) => this.selected.has(p.id));
+			},
 
 			async init() {
 				this.base = (document.documentElement.dataset.base || '').replace(/\/+$/, '');
@@ -225,11 +505,9 @@ const base = import.meta.env.BASE_URL;
 				this._all = await listAll();
 				this.pickExamples();
 				this.tagDims = aggregateTags(this._all);
-				// 随机挑一个 example 当 placeholder,比硬编码"雨后街拍"更鲜活
 				if (this.examples.length > 0) {
 					this.placeholder = `比如:${this.examples[0]}`;
 				}
-				// 支持从其他页带 ?q=xxx 进来
 				const qs = new URLSearchParams(window.location.search).get('q');
 				if (qs) {
 					this.query = qs;
@@ -247,9 +525,19 @@ const base = import.meta.env.BASE_URL;
 			},
 
 			useTag(s: string) {
-				// 标签点了直接替换 query 跑搜索;想组合多个标签自己在输入框里加词
 				this.query = s;
 				this.run();
+			},
+
+			toggleSelect(id: string) {
+				const next = new Set(this.selected);
+				if (next.has(id)) {
+					next.delete(id);
+				} else {
+					if (next.size >= 9) return;
+					next.add(id);
+				}
+				this.selected = next;
 			},
 
 			async run() {
@@ -259,6 +547,7 @@ const base = import.meta.env.BASE_URL;
 				this.errorMsg = '';
 				this.usedFallback = false;
 				this.ranAt = Date.now();
+				this.selected = new Set();
 
 				const items: SearchableArtwork[] = this._all.map((p) => ({
 					id: p.id,
@@ -295,17 +584,119 @@ const base = import.meta.env.BASE_URL;
 						artistName: p.meta.artistName,
 						title: p.meta.title,
 						coverUrl: deliveryUrl(p, { width: 600 }),
+						fullUrl: deliveryUrl(p),
 						artistHref: artistHref({ ownerHash: p.ownerHash, slug: p.artistSlug }, this.base),
 					}));
 				this.busy = false;
 			},
+
+			async goToCopywriting() {
+				if (this.selected.size === 0 || !this.aiOn) return;
+				this.step = 'copywriting';
+				this.generating = true;
+				this.copyError = '';
+				this.socialCopy = null;
+				this.chatMessages = [];
+				this.chatInput = '';
+
+				const photos = this.selectedPhotos;
+				try {
+					const dataUrls = await Promise.all(
+						photos.map((p: ResultItem) =>
+							urlToDataUrl(p.coverUrl).catch(() => p.coverUrl)
+						),
+					);
+					const result = await generateSocialCopy(dataUrls);
+					if (result.ok) {
+						this.socialCopy = result.copy;
+						this.chatHistory = result.history;
+						if (result.reply) {
+							this.chatMessages = [{ role: 'assistant', content: result.reply }];
+						}
+					} else {
+						this.copyError = result.error;
+					}
+				} catch (e) {
+					this.copyError = (e as Error).message;
+				}
+				this.generating = false;
+			},
+
+			async retryCopy() {
+				this.copyError = '';
+				await this.goToCopywriting();
+			},
+
+			async sendRevise() {
+				const text = this.chatInput.trim();
+				if (!text || this.revising || !this.socialCopy) return;
+				this.chatInput = '';
+				this.chatMessages.push({ role: 'user', content: text });
+				this.revising = true;
+
+				this.$nextTick(() => {
+					const box = this.$refs.chatBox as HTMLElement;
+					if (box) box.scrollTop = box.scrollHeight;
+				});
+
+				const result = await reviseSocialCopy(this.chatHistory, text, this.socialCopy);
+				if (result.ok) {
+					this.socialCopy = result.copy;
+					this.chatHistory = result.history;
+					this.chatMessages.push({ role: 'assistant', content: result.reply });
+				} else {
+					this.chatMessages.push({ role: 'assistant', content: `出错了: ${result.error}` });
+				}
+				this.revising = false;
+
+				this.$nextTick(() => {
+					const box = this.$refs.chatBox as HTMLElement;
+					if (box) box.scrollTop = box.scrollHeight;
+				});
+			},
+
+			confirmCopy() {
+				this.step = 'export';
+			},
+
+			backToSearch() {
+				this.step = 'search';
+			},
+
+			xhsFullText(): string {
+				if (!this.socialCopy) return '';
+				const x = this.socialCopy.xiaohongshu;
+				return `${x.title}\n\n${x.body}\n\n${x.tags.join(' ')}`;
+			},
+
+			async copyText(text: string, event: Event) {
+				try {
+					await navigator.clipboard.writeText(text);
+					const btn = event.target as HTMLElement;
+					const orig = btn.textContent;
+					btn.textContent = '已复制 ✓';
+					setTimeout(() => { btn.textContent = orig; }, 1500);
+				} catch {
+					const ta = document.createElement('textarea');
+					ta.value = text;
+					document.body.appendChild(ta);
+					ta.select();
+					document.execCommand('copy');
+					document.body.removeChild(ta);
+				}
+			},
+
+			resetAll() {
+				this.step = 'search';
+				this.selected = new Set();
+				this.socialCopy = null;
+				this.chatHistory = [];
+				this.chatMessages = [];
+				this.copyError = '';
+			},
 		};
 	}
 
-	/**
-	 * 从所有 photos 聚合 5 维 tags,每个维度去重 + 按字母排序,
-	 * 返回 [{key, label, emoji, color, values:[...]}, ...] 给模板 x-for。
-	 */
 	function aggregateTags(photos: PhotoEntry[]): TagDim[] {
 		const dims: { key: TagDim['key']; label: string; emoji: string; color: string }[] = [
 			{ key: 'theme', label: '主题', emoji: '🎨', color: 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100' },

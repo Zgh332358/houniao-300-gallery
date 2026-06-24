@@ -470,3 +470,139 @@ export function keywordFallbackSearch(
 		.slice(0, limit)
 		.map((s) => s.id);
 }
+
+/* ---------- 社交媒体文案生成 (搜索页 → 选图 → 生文案) ---------- */
+
+const SOCIAL_COPY_SYSTEM_PROMPT = `你是「候鸟 300」摄影社区的社交媒体文案助手。
+用户会选择一组摄影作品（1~9 张），你根据图片的视觉内容、情绪、主题，生成适合发布在微信朋友圈和小红书的文案。
+
+每一轮都必须、且只能输出一个 JSON 对象（不要 Markdown 代码块、不要任何多余文字），结构：
+{
+  "reply": "给用户的一句话对话回复。首轮为简短开场；当用户要求修改时，说明你改了什么",
+  "wechat": "适合微信朋友圈的文案。简洁有意境，1~3 句话，可以包含 emoji，字数不超过 100",
+  "xiaohongshu_title": "小红书标题。带 emoji、吸引眼球、不超过 20 字",
+  "xiaohongshu_body": "小红书正文。200 字以内，包含对图片的描述、情绪渲染、拍摄心得等，自然流畅，适合小红书调性",
+  "xiaohongshu_tags": ["#话题标签1", "#话题标签2", "#话题标签3"]
+}
+
+写作要求：
+- 朋友圈文案要克制含蓄，像一个有审美的摄影师发的，不要网红腔
+- 小红书文案可以稍活泼，但要有摄影圈的专业感，不要过于浮夸
+- 标签 5~8 个，包含摄影相关 + 情绪/场景相关的混搭
+- 如果多张图有共同主题就围绕主题写；如果风格各异就找一个串联它们的切入角度
+- 后续轮次用户会给修改要求，请据此更新文案并在 reply 说明改动`;
+
+export interface SocialCopy {
+	wechat: string;
+	xiaohongshu: { title: string; body: string; tags: string[] };
+}
+
+export interface SocialCopyOk {
+	ok: true;
+	copy: SocialCopy;
+	reply: string;
+	history: ChatMessage[];
+}
+export type SocialCopyResult = SocialCopyOk | { ok: false; error: string };
+
+function parseSocialCopy(content: string): { reply: string; copy: SocialCopy } {
+	let raw = (content || '').trim();
+	const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+	if (fence) raw = fence[1].trim();
+	if (!raw.startsWith('{')) {
+		const s = raw.indexOf('{');
+		const e = raw.lastIndexOf('}');
+		if (s !== -1 && e !== -1) raw = raw.slice(s, e + 1);
+	}
+	let o: Record<string, any> = {};
+	try { o = JSON.parse(raw); } catch { o = {}; }
+	return {
+		reply: str(o.reply),
+		copy: {
+			wechat: str(o.wechat),
+			xiaohongshu: {
+				title: str(o.xiaohongshu_title),
+				body: str(o.xiaohongshu_body),
+				tags: Array.isArray(o.xiaohongshu_tags)
+					? o.xiaohongshu_tags.map(str).filter(Boolean)
+					: [],
+			},
+		},
+	};
+}
+
+export async function generateSocialCopy(
+	imageUrls: string[],
+): Promise<SocialCopyResult> {
+	if (imageUrls.length === 0) return { ok: false, error: '请至少选择一张图片' };
+
+	const imageContent = imageUrls.map((url) => ({
+		type: 'image_url' as const,
+		image_url: { url },
+	}));
+
+	const history: ChatMessage[] = [
+		{ role: 'system', content: SOCIAL_COPY_SYSTEM_PROMPT },
+		{
+			role: 'user',
+			content: [
+				{
+					type: 'text',
+					text: `这是我选的 ${imageUrls.length} 张摄影作品，请帮我生成朋友圈和小红书文案。`,
+				},
+				...imageContent,
+			],
+		},
+	];
+
+	try {
+		const { content } = await stepChat(history);
+		const parsed = parseSocialCopy(content);
+		history.push({ role: 'assistant', content });
+		return { ok: true, copy: parsed.copy, reply: parsed.reply, history };
+	} catch (e) {
+		return { ok: false, error: (e as Error).message };
+	}
+}
+
+export async function reviseSocialCopy(
+	history: ChatMessage[],
+	userText: string,
+	currentCopy: SocialCopy,
+): Promise<SocialCopyResult> {
+	const composed =
+		`当前文案 —— 朋友圈:${currentCopy.wechat}｜小红书标题:${currentCopy.xiaohongshu.title}｜` +
+		`小红书正文:${currentCopy.xiaohongshu.body}｜标签:${currentCopy.xiaohongshu.tags.join(' ')}\n` +
+		`我的修改要求:${userText}`;
+
+	const next: ChatMessage[] = [...history, { role: 'user', content: composed }];
+	try {
+		const { content } = await stepChat(next);
+		const parsed = parseSocialCopy(content);
+		next.push({ role: 'assistant', content });
+		return { ok: true, copy: parsed.copy, reply: parsed.reply || '已更新文案。', history: next };
+	} catch (e) {
+		return { ok: false, error: (e as Error).message };
+	}
+}
+
+export function urlToDataUrl(url: string, maxEdge = 1024, quality = 0.85): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const img = new Image();
+		img.crossOrigin = 'anonymous';
+		img.onload = () => {
+			const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+			const w = Math.max(1, Math.round(img.naturalWidth * scale));
+			const h = Math.max(1, Math.round(img.naturalHeight * scale));
+			const canvas = document.createElement('canvas');
+			canvas.width = w;
+			canvas.height = h;
+			const ctx = canvas.getContext('2d');
+			if (!ctx) return reject(new Error('canvas 不可用'));
+			ctx.drawImage(img, 0, 0, w, h);
+			resolve(canvas.toDataURL('image/jpeg', quality));
+		};
+		img.onerror = () => reject(new Error('无法加载图片'));
+		img.src = url;
+	});
+}
