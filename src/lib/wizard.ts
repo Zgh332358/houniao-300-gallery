@@ -261,19 +261,15 @@ function stripExt(name: string): string {
 import { hasAiKey } from './ai';
 import { isLoggedIn, hasBoundSlug } from './auth';
 
-export type StepName = 'setup' | 'identity' | 'collection' | 'photos' | 'publish';
+export type StepName = 'collection' | 'photos' | 'publish';
 
 export const STEP_ORDER: StepName[] = [
-	'setup',
-	'identity',
 	'collection',
 	'photos',
 	'publish',
 ];
 
 export const STEP_LABEL: Record<StepName, string> = {
-	setup: 'AI 助手设置',
-	identity: '你是谁',
 	collection: '作品集',
 	photos: '选图',
 	publish: '发布',
@@ -287,17 +283,11 @@ export function stepHref(base: string, step: StepName): string {
 
 /** 前置步骤是否已完成。photosCount 由调用方读 IDB 给。 */
 export async function isStepReady(step: StepName): Promise<boolean> {
-	// 全部 wizard 步骤都先要登录(setup 也要 —— 没登录连 AI Key 都不必填)
 	if (!isLoggedIn()) return false;
+	if (!hasBoundSlug()) return false;
+	if (!hasAiKey()) return false;
 	switch (step) {
-		case 'setup':
-			return true; // 已登录后总是可进
-		case 'identity':
-			return hasAiKey();
 		case 'collection': {
-			if (!hasAiKey()) return false;
-			// 必须已经绑定 slug(注册过的)才能继续 —— 防止"首次进入但还没创建画廊"的状态
-			if (!hasBoundSlug()) return false;
 			const id = getIdentity();
 			return !!(id.artistName.trim() && id.artistSlug && id.artistContact.trim());
 		}
@@ -329,10 +319,10 @@ export async function gateForStep(step: StepName): Promise<StepName | null> {
 	return firstIncompleteStep();
 }
 
-/** 没登录就给一个 /login 的绝对路径,已登录返回 null。
- *  所有 wizard 页 init 里第一时间调,没登录就 location.replace 到登录页。 */
+/** 没登录 / 没绑 slug / 没配 AI Key → 给一个 /login 的绝对路径,让用户走完整个入驻流程。
+ *  所有 wizard 页 init 里第一时间调,未完成就 location.replace 到登录页。 */
 export function gateForLogin(base: string): string | null {
-	if (isLoggedIn()) return null;
+	if (isLoggedIn() && hasBoundSlug() && hasAiKey()) return null;
 	const b = base.replace(/\/+$/, '');
 	return `${b}/login/`;
 }

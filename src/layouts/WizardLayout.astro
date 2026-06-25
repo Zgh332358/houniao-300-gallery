@@ -153,7 +153,7 @@ const nextHref = next ? stepHref(base, next) : '';
 	 * 跟新页面 350ms 的淡入合起来就是「转场」感。
 	 * 注意:只拦截向导内/进度条的 wizard step 链接,其它链接照常。
 	 */
-	const WIZARD_STEPS = ['setup', 'identity', 'collection', 'photos', 'publish'];
+	const WIZARD_STEPS = ['collection', 'photos', 'publish'];
 	const stepRe = new RegExp(`/upload/(${WIZARD_STEPS.join('|')})/?$`);
 
 	document.addEventListener(

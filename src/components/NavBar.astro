@@ -61,7 +61,7 @@ const menuItems = [
 					<!-- 次要按钮:进 wizard 上传新图(仅已绑 slug 时显示,免得没注册的人迷糊) -->
 					<a
 						x-show="boundSlugHref"
-						:href="`${baseStr}/upload/setup/`"
+						:href="`${baseStr}/upload/collection/`"
 						class="text-sm text-gray-600 hover:text-black underline-offset-2 hover:underline"
 					>+ 上传</a>
 					<div class="text-xs text-gray-500 leading-tight">
@@ -123,7 +123,7 @@ const menuItems = [
 					>我的画廊</a>
 					<a
 						x-show="boundSlugHref"
-						:href="`${baseStr}/upload/setup/`"
+						:href="`${baseStr}/upload/collection/`"
 						@click="isOpen = false"
 						class="text-base block py-2 text-gray-600"
 					>+ 上传新作品</a>
@@ -151,10 +151,9 @@ const menuItems = [
 			boundSlugHref: '',
 			baseStr: '/',
 
-			/** 「我的画廊」按钮的链接:已绑 slug → 跳画廊;未绑 → 跳 setup 让用户走完 wizard 注册。
-			 *  这样按钮永远叫「我的画廊」,不出现「完成注册」吓人 UI */
+			/** 已绑 slug → 画廊;未绑 → 登录流程 */
 			get myGalleryHref(): string {
-				return this.boundSlugHref || `${this.baseStr}/upload/setup/`;
+				return this.boundSlugHref || `${this.baseStr}/login/`;
 			},
 
 			init() {

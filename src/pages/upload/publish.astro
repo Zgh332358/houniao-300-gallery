@@ -19,7 +19,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 				<div class="flex justify-between">
 					<dt class="text-gray-500">页面</dt>
 					<dd>
-						<code class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono text-xs" x-text="`/${artistSlug}/`"></code>
+						<code class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono text-xs" x-text="`/${phoneHash8}/${artistSlug}/`"></code>
 					</dd>
 				</div>
 				<div class="flex justify-between">
@@ -146,7 +146,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 			stepHref,
 			type WizardPhoto,
 		} from '../../lib/wizard';
-		import { requireSession, phoneHash } from '../../lib/auth';
+		import { requireSession, phoneHash, phoneHashShort } from '../../lib/auth';
 
 		interface PhotoView extends WizardPhoto {
 			previewUrl: string;
@@ -162,7 +162,8 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 				artistContact: '',
 				collectionName: '',
 				collectionSlug: '',
-				ownerHash: '', // 完整 64 字符 hash,publishOne 时写入 photos.owner_hash
+				ownerHash: '',
+				phoneHash8: '',
 				photos: [] as PhotoView[],
 				publishing: false,
 				globalError: '',
@@ -173,11 +174,11 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					return this.photos.length > 0 && this.photos.every((p) => p.publishStatus === 'done');
 				},
 				get artistHref(): string {
-					return `${this.base}/${this.artistSlug}/`;
+					return `${this.base}/${this.phoneHash8}/${this.artistSlug}/`;
 				},
 				get artistFullUrl(): string {
 					if (typeof location === 'undefined' || !this.artistSlug) return '';
-					return `${location.origin}${this.base}/${this.artistSlug}/`;
+					return `${location.origin}${this.base}/${this.phoneHash8}/${this.artistSlug}/`;
 				},
 
 				async init() {
@@ -200,6 +201,10 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 					const c = getCollection();
 					this.collectionName = c.name;
 					this.collectionSlug = c.slug;
+					try {
+						const auth = requireSession();
+						this.phoneHash8 = phoneHashShort(await phoneHash(auth.phone));
+					} catch { this.phoneHash8 = ''; }
 
 					const list = await listPhotos();
 					this.photos = list.map((p) => ({
@@ -225,7 +230,7 @@ import WizardLayout from '../../layouts/WizardLayout.astro';
 							return;
 						}
 						if (this.artistSlug !== auth.slug) {
-							this.globalError = `当前会话绑定的是 /${auth.slug}/,但本地 identity 是 /${this.artistSlug}/ —— 不一致,拒绝发布。回身份步检查。`;
+							this.globalError = `当前会话绑定的是 /${auth.slug}/,但本地 identity 是 /${this.artistSlug}/ —— 不一致,拒绝发布。回登录页检查。`;
 							return;
 						}
 						this.ownerHash = await phoneHash(auth.phone);

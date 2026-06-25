@@ -5,82 +5,395 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 ---
 
 <MainLayout>
-	<section class="pt-32 pb-20" x-data="loginPage()" x-init="init()">
+	<section class="pt-32 pb-20" x-data="onboardingFlow()" x-init="init()" x-cloak>
 		<div class="max-w-md mx-auto px-4">
-			<header class="text-center mb-10">
-				<h1 class="text-3xl md:text-4xl font-bold mb-3">进入你的画廊</h1>
-				<p class="text-gray-600">
-					输入手机号 — 已经有画廊的就直接进编辑;<br />还没有的会帮你创建一个。
-				</p>
-			</header>
+			<!-- 进度指示器 -->
+			<div class="flex items-center justify-center gap-2 mb-8" x-show="onboardStep > 0">
+				<template x-for="i in 3" :key="i">
+					<div class="flex items-center gap-2">
+						<div
+							class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold border-2 transition-colors"
+							:class="i < onboardStep ? 'bg-violet-600 border-violet-600 text-white' :
+								i === onboardStep ? 'bg-white border-violet-600 text-violet-600 ring-2 ring-violet-200' :
+								'bg-white border-gray-300 text-gray-400'"
+						>
+							<span x-show="i < onboardStep">✓</span>
+							<span x-show="i >= onboardStep" x-text="i"></span>
+						</div>
+						<span
+							class="text-xs whitespace-nowrap"
+							:class="i === onboardStep ? 'text-gray-800 font-medium' : 'text-gray-400'"
+							x-text="['登录','你是谁','AI 助手'][i-1]"
+						></span>
+						<div x-show="i < 3" class="h-px w-6 bg-gray-200 mx-1"></div>
+					</div>
+				</template>
+			</div>
 
-			<section class="border border-gray-200 rounded-lg p-6 bg-white space-y-5">
-				<label class="block">
-					<span class="text-sm text-gray-600 block mb-1">手机号</span>
-					<input
-						type="tel"
-						x-model="phone"
-						@keydown.enter="submit()"
-						placeholder="138xxxx xxxx 或 +86 138 ..."
-						autocomplete="tel"
-						class="w-full px-3 py-3 border border-gray-300 rounded focus:outline-none focus:border-black text-base"
-					/>
-					<p class="text-xs text-gray-400 mt-2">
-						🔒 不会公开,仅用于让你下次回来还能找到自己的画廊。
-						我们存的是 SHA-256 哈希,不存原始号码。
+			<!-- ========== 第 1 步:手机号登录 ========== -->
+			<div x-show="onboardStep === 1" x-transition>
+				<header class="text-center mb-10">
+					<h1 class="text-3xl md:text-4xl font-bold mb-3">进入你的画廊</h1>
+					<p class="text-gray-600">
+						输入手机号 — 已经有画廊的就直接进编辑;<br />还没有的会帮你创建一个。
 					</p>
-				</label>
+				</header>
 
-				<button
-					type="button"
-					@click="submit()"
-					:disabled="busy || phone.trim().length < 4"
-					class="w-full py-3 bg-black text-white rounded font-medium hover:bg-violet-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+				<section class="border border-gray-200 rounded-lg p-6 bg-white space-y-5">
+					<label class="block">
+						<span class="text-sm text-gray-600 block mb-1">手机号</span>
+						<input
+							type="tel"
+							x-model="phone"
+							@keydown.enter="submitPhone()"
+							placeholder="138xxxx xxxx 或 +86 138 ..."
+							autocomplete="tel"
+							class="w-full px-3 py-3 border border-gray-300 rounded focus:outline-none focus:border-black text-base"
+						/>
+						<p class="text-xs text-gray-400 mt-2">
+							🔒 不会公开,仅用于让你下次回来还能找到自己的画廊。
+							我们存的是 SHA-256 哈希,不存原始号码。
+						</p>
+					</label>
+
+					<button
+						type="button"
+						@click="submitPhone()"
+						:disabled="busy || phone.trim().length < 4"
+						class="w-full py-3 bg-black text-white rounded font-medium hover:bg-violet-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+					>
+						<span x-show="!busy">进入 →</span>
+						<span x-show="busy">查询中...</span>
+					</button>
+
+					<p
+						x-show="error"
+						class="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3"
+						x-text="error"
+					></p>
+
+					<div x-show="hint" class="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded p-3" x-html="hint">
+					</div>
+				</section>
+
+				<p class="text-center text-xs text-gray-400 mt-6">
+					这不是真的"账号系统" — 是基于手机号的轻识别。如果有人知道你手机号,
+					理论上能"以你的身份"进入。仅用于驻地艺术家场景的便捷找回。
+				</p>
+			</div>
+
+			<!-- ========== 第 2 步:你是谁 ========== -->
+			<div x-show="onboardStep === 2" x-transition>
+				<header class="text-center mb-10">
+					<h1 class="text-3xl md:text-4xl font-bold mb-3">你是谁</h1>
+					<p class="text-gray-600">
+						一个名字 + 联系方式,让别人更好地联系到你。
+					</p>
+				</header>
+
+				<!-- 状态横幅 -->
+				<section
+					x-show="identityMode === 'bound'"
+					class="border border-violet-200 bg-violet-50 rounded-lg p-4 flex items-center justify-between gap-3 mb-6"
 				>
-					<span x-show="!busy">进入 →</span>
-					<span x-show="busy">查询中...</span>
-				</button>
+					<div class="text-sm leading-relaxed">
+						<p class="text-violet-900">
+							已登录 · <span class="font-mono" x-text="phoneMasked"></span>
+						</p>
+						<p class="text-xs text-violet-700 mt-0.5">
+							你的画廊地址:<code class="px-1.5 py-0.5 bg-white rounded text-violet-800 font-mono" x-text="`/${sessionSlug}/`"></code>
+						</p>
+					</div>
+					<button
+						type="button"
+						@click="logout()"
+						class="text-xs text-violet-700 underline hover:text-violet-900 flex-shrink-0"
+					>
+						退出
+					</button>
+				</section>
 
-				<p
-					x-show="error"
-					class="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3"
-					x-text="error"
-				></p>
+				<section
+					x-show="identityMode === 'register'"
+					class="border border-amber-200 bg-amber-50 rounded-lg p-4 mb-6"
+				>
+					<p class="text-sm text-amber-900">
+						首次进入 · <span class="font-mono" x-text="phoneMasked"></span>
+					</p>
+					<p class="text-xs text-amber-700 mt-1">
+						为你的手机号绑定一个画廊地址 —— 填好下面的内容,点「创建画廊」。
+					</p>
+				</section>
 
-				<div x-show="hint" class="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded p-3" x-html="hint">
+				<section
+					x-show="identityMode === 'created'"
+					class="border border-green-200 bg-green-50 rounded-lg p-4 mb-6"
+				>
+					<p class="text-sm text-green-900">
+						✓ 画廊已创建 · <code class="px-1.5 py-0.5 bg-white rounded text-green-800 font-mono" x-text="`/${sessionSlug}/`"></code>
+					</p>
+					<p class="text-xs text-green-700 mt-1">
+						点「下一步」继续设置 AI 助手。
+					</p>
+				</section>
+
+				<!-- 主表单 -->
+				<section class="border border-gray-200 rounded-lg p-6 bg-white space-y-5">
+					<label class="block">
+						<span class="text-sm text-gray-600 block mb-1">显示名 *</span>
+						<input
+							type="text"
+							x-model="artistName"
+							@input="recomputeSlug(); persistIdentity()"
+							placeholder="你的名字 / 笔名"
+							class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-black"
+						/>
+						<p class="text-xs text-gray-500 mt-1.5" x-show="artistSlug">
+							你的页面地址将是 <code class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono" x-text="`/${phoneHash8 || '...'}/${artistSlug}/`"></code>
+						</p>
+					</label>
+
+					<label class="block" x-show="identityMode !== 'bound'">
+						<span class="text-sm text-gray-600 block mb-1">
+							画廊地址 slug *
+							<span class="text-xs text-gray-400">(只能小写字母、数字、短横)</span>
+						</span>
+						<input
+							type="text"
+							x-model="artistSlug"
+							@input="_lastAutoSlug = ''; persistIdentity()"
+							:disabled="identityMode !== 'register'"
+							:class="identityMode !== 'register' ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''"
+							placeholder="lin-mo"
+							class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-black font-mono"
+						/>
+					</label>
+
+					<label class="block">
+						<span class="text-sm text-gray-600 block mb-1">联系方式 *</span>
+						<input
+							type="text"
+							x-model="artistContact"
+							@input="persistIdentity()"
+							placeholder="email@example.com 或 @your_ig 或 https://..."
+							class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-black"
+						/>
+						<p class="text-xs text-gray-500 mt-1">
+							📬 会展示在你的作品页上,让别人更好地联系到你
+						</p>
+					</label>
+				</section>
+
+				<!-- 注册态:创建画廊 -->
+				<section x-show="identityMode === 'register'" class="mt-6 space-y-3">
+					<button
+						type="button"
+						@click="createGallery()"
+						:disabled="!canCreateGallery || creating"
+						class="w-full py-3 bg-black text-white rounded font-medium hover:bg-violet-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+					>
+						<span x-show="!creating">创建画廊 →</span>
+						<span x-show="creating">创建中...</span>
+					</button>
+					<p
+						x-show="createError"
+						class="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3"
+						x-text="createError"
+					></p>
+				</section>
+
+				<!-- 已绑/已创建:下一步 -->
+				<section x-show="identityMode === 'bound' || identityMode === 'created'" class="mt-6">
+					<button
+						type="button"
+						@click="goToStep3()"
+						:disabled="!identityReady"
+						class="w-full py-3 bg-violet-600 text-white rounded font-medium hover:bg-violet-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+					>
+						下一步:AI 助手设置 →
+					</button>
+					<p
+						x-show="!identityReady"
+						class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3 mt-3"
+					>
+						显示名和联系方式都填了才能继续。
+					</p>
+				</section>
+			</div>
+
+			<!-- ========== 第 3 步:AI 助手设置 ========== -->
+			<div x-show="onboardStep === 3" x-transition>
+				<header class="text-center mb-10">
+					<h1 class="text-3xl md:text-4xl font-bold mb-3">AI 作品助手设置</h1>
+					<p class="text-gray-600">
+						填入你自己的 StepFun API Key — 之后所有 AI 能力都用它跑。<br />Key 只存你本机浏览器,不会传去任何服务器。
+					</p>
+				</header>
+
+				<p class="-mt-3 mb-4 text-sm text-violet-700 text-center">
+					📖 <a
+						href="https://wvixbzgc0u7.feishu.cn/wiki/Zug9wfaXnikQidkR8nNcHqKLnxj?pre_pathname=%2Fdrive%2Fhome%2F"
+						target="_blank"
+						rel="noopener noreferrer"
+						class="underline underline-offset-2 hover:text-violet-900"
+					>StepPlan 兑换教程 →</a>
+				</p>
+
+				<section class="border border-gray-200 rounded-lg p-6 bg-white space-y-5">
+					<div class="flex items-center gap-2 mb-3">
+						<span class="text-2xl">🔑</span>
+						<h2 class="text-xl font-semibold">Step API Key</h2>
+						<span
+							x-show="apiKey.trim().length > 0"
+							class="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-700"
+						>已就绪</span>
+					</div>
+
+					<label class="block">
+						<span class="text-sm text-gray-600 block mb-1">API Key *</span>
+						<div class="flex gap-2">
+							<input
+								:type="showKey ? 'text' : 'password'"
+								x-model="apiKey"
+								@input="persistAi()"
+								placeholder="粘贴 sk-... 或一长串字符"
+								autocomplete="off"
+								class="flex-1 px-3 py-2 border border-gray-300 rounded font-mono text-sm focus:outline-none focus:border-violet-500"
+							/>
+							<button
+								type="button"
+								@click="showKey = !showKey"
+								class="px-3 py-2 border border-gray-300 rounded text-sm text-gray-500 hover:text-gray-800"
+								x-text="showKey ? '隐藏' : '显示'"
+							></button>
+						</div>
+					</label>
+
+					<p class="text-xs text-gray-500 mt-2">
+						没有 Key?去
+						<a
+							href="https://platform.stepfun.com/"
+							target="_blank"
+							rel="noopener"
+							class="underline hover:text-violet-700">StepFun 开放平台</a
+						> 几分钟领一个。
+					</p>
+				</section>
+
+				<section class="border border-gray-200 rounded-lg p-6 bg-white mt-4">
+					<h2 class="text-base font-semibold mb-3 text-gray-700">使用的模型</h2>
+					<dl class="space-y-3 text-sm">
+						<div class="flex justify-between items-center">
+							<dt class="text-gray-500">多模态(读图 + 文案 + 对话 + 审核 + 检索)</dt>
+							<dd>
+								<span
+									class="px-2 py-1 bg-gray-100 rounded font-mono text-xs font-bold text-gray-900 select-all"
+									x-text="model || 'step-3.7-flash'"
+								></span>
+							</dd>
+						</div>
+					</dl>
+					<p class="text-xs text-gray-400 mt-3">
+						多模态模型由平台预设,不可修改
+					</p>
+				</section>
+
+				<div class="mt-6 space-y-3">
+					<p
+						x-show="!apiKey.trim()"
+						class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3"
+					>
+						填好 Key 才能进入上传。
+					</p>
+					<button
+						type="button"
+						@click="finishOnboarding()"
+						:disabled="!apiKey.trim()"
+						class="w-full py-3 bg-violet-600 text-white rounded font-medium hover:bg-violet-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+					>
+						完成设置,开始上传 →
+					</button>
 				</div>
-			</section>
-
-			<p class="text-center text-xs text-gray-400 mt-6">
-				这不是真的"账号系统" — 是基于手机号的轻识别。如果有人知道你手机号,
-				理论上能"以你的身份"进入。仅用于驻地艺术家场景的便捷找回。
-			</p>
+			</div>
 		</div>
 	</section>
 </MainLayout>
 
 <script>
-	import { phoneHash, getSession, setSession, normalizePhone } from '../lib/auth';
-	import { findArtistByPhoneHash } from '../lib/artists';
+	import { phoneHash, getSession, setSession, normalizePhone, maskPhone, phoneHashShort, clearSession, bindSlugToSession, hasBoundSlug } from '../lib/auth';
+	import { findArtistByPhoneHash, createArtist } from '../lib/artists';
+	import { getAiConfig, setAiConfig, hasAiKey, DEFAULT_MODEL } from '../lib/ai';
+	import { getIdentity, setIdentity } from '../lib/wizard';
+	import { toSlug, isValidSlug } from '../lib/photos';
 
-	function loginPage() {
+	function onboardingFlow() {
 		return {
+			onboardStep: 1,
+			// step 1
 			phone: '',
 			busy: false,
 			error: '',
 			hint: '',
 			base: '',
+			// step 2
+			artistName: '',
+			artistSlug: '',
+			artistContact: '',
+			_lastAutoSlug: '',
+			phoneHash8: '',
+			phoneMasked: '',
+			sessionSlug: '',
+			identityMode: 'register' as 'register' | 'bound' | 'created',
+			creating: false,
+			createError: '',
+			// step 3
+			apiKey: '',
+			model: DEFAULT_MODEL,
+			showKey: false,
+
+			get canCreateGallery(): boolean {
+				return (
+					this.artistName.trim().length > 0 &&
+					isValidSlug(this.artistSlug) &&
+					this.artistContact.trim().length > 0
+				);
+			},
+			get identityReady(): boolean {
+				return (
+					this.artistName.trim().length > 0 &&
+					isValidSlug(this.artistSlug) &&
+					this.artistContact.trim().length > 0
+				);
+			},
 
 			init() {
 				this.base = (document.documentElement.dataset.base || '/').replace(/\/+$/, '');
-				// 已经登录过 → 直接进 AI 助手设置(后续步骤会自然引导回 identity 创建画廊)
 				const s = getSession();
 				if (s) {
-					location.replace(`${this.base}/upload/setup/`);
+					// already logged in — determine which step to show
+					this.phone = s.phone;
+					this.phoneMasked = maskPhone(s.phone);
+					this.sessionSlug = s.slug;
+
+					if (s.slug && hasAiKey()) {
+						// fully onboarded → go to upload
+						location.replace(`${this.base}/upload/collection/`);
+						return;
+					}
+					if (s.slug) {
+						// has identity but no AI key → step 3
+						this.initStep2Data(s);
+						this.onboardStep = 3;
+						this.initStep3Data();
+					} else {
+						// logged in but no slug → step 2
+						this.onboardStep = 2;
+						this.initStep2Data(s);
+					}
 				}
 			},
 
-			async submit() {
+			async submitPhone() {
 				if (this.busy) return;
 				const phone = normalizePhone(this.phone);
 				if (phone.length < 4) {
@@ -94,30 +407,137 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 					const hash = await phoneHash(phone);
 					const artist = await findArtistByPhoneHash(hash);
 					if (artist) {
-						// 老用户:绑定的 slug 已存在
 						setSession(phone, artist.slug);
-						this.hint = `欢迎回来 <strong>${artist.name}</strong> · 进入 AI 助手设置...`;
+						this.hint = `欢迎回来 <strong>${artist.name}</strong>`;
+						this.sessionSlug = artist.slug;
 					} else {
-						// 新用户:slug 还没绑,session.slug 留空,后面 identity 步会触发创建
 						setSession(phone, '');
-						this.hint = '看起来你是第一次来 · 先配置 AI 助手,后面会引导你创建画廊...';
+						this.hint = '看起来你是第一次来,接下来创建你的画廊...';
+						this.sessionSlug = '';
 					}
-					// 不管新老都先去 setup —— wizard 第一步是 API Key 配置,
-					// 没 key 后续什么都跑不动。setup → identity 时再分新老两态。
+					this.phoneMasked = maskPhone(phone);
+
+					const s = getSession()!;
 					setTimeout(() => {
-						location.replace(`${this.base}/upload/setup/`);
+						this.initStep2Data(s);
+						if (s.slug && hasAiKey()) {
+							location.replace(`${this.base}/upload/collection/`);
+						} else if (s.slug) {
+							this.onboardStep = 3;
+							this.initStep3Data();
+						} else {
+							this.onboardStep = 2;
+						}
 					}, 600);
 				} catch (e: any) {
 					this.error = e?.message || '查询失败,请稍后再试';
 					this.busy = false;
 				}
 			},
+
+			async initStep2Data(s: { phone: string; slug: string }) {
+				this.identityMode = s.slug ? 'bound' : 'register';
+				try {
+					this.phoneHash8 = phoneHashShort(await phoneHash(s.phone));
+				} catch { this.phoneHash8 = ''; }
+				const id = getIdentity();
+				this.artistName = id.artistName;
+				this.artistContact = id.artistContact;
+				if (s.slug) {
+					this.artistSlug = s.slug;
+				} else {
+					this.artistSlug = id.artistSlug;
+				}
+				this._lastAutoSlug = this.artistSlug;
+			},
+
+			initStep3Data() {
+				const c = getAiConfig();
+				this.apiKey = c.apiKey;
+				this.model = DEFAULT_MODEL;
+				if (c.model !== DEFAULT_MODEL) {
+					setAiConfig({ model: DEFAULT_MODEL });
+				}
+			},
+
+			recomputeSlug() {
+				if (this.identityMode === 'bound') return;
+				if (!this.artistSlug || this._lastAutoSlug === this.artistSlug) {
+					this.artistSlug = toSlug(this.artistName);
+					this._lastAutoSlug = this.artistSlug;
+				}
+			},
+
+			persistIdentity() {
+				setIdentity({
+					artistName: this.artistName,
+					artistSlug: this.artistSlug,
+					artistContact: this.artistContact,
+				});
+			},
+
+			async createGallery() {
+				if (this.creating) return;
+				this.createError = '';
+				if (!this.canCreateGallery) {
+					this.createError = '请把名字、slug、联系方式都填了';
+					return;
+				}
+				const s = getSession();
+				if (!s?.phone) {
+					this.createError = '会话异常,请刷新页面重新进入';
+					return;
+				}
+				this.creating = true;
+				try {
+					const hash = await phoneHash(s.phone);
+					await createArtist({
+						slug: this.artistSlug,
+						name: this.artistName,
+						contact: this.artistContact,
+						phoneHash: hash,
+					});
+					bindSlugToSession(this.artistSlug);
+					this.sessionSlug = this.artistSlug;
+					this.identityMode = 'created';
+				} catch (e: any) {
+					this.createError = e?.message || String(e);
+				} finally {
+					this.creating = false;
+				}
+			},
+
+			goToStep3() {
+				this.persistIdentity();
+				this.initStep3Data();
+				this.onboardStep = 3;
+			},
+
+			persistAi() {
+				setAiConfig({ apiKey: this.apiKey, model: this.model });
+			},
+
+			finishOnboarding() {
+				this.persistAi();
+				location.replace(`${this.base}/upload/collection/`);
+			},
+
+			logout() {
+				if (!confirm('退出登录?当前未发布的图会保留,但下次得重新输手机号。')) return;
+				clearSession();
+				this.onboardStep = 1;
+				this.phone = '';
+				this.busy = false;
+				this.error = '';
+				this.hint = '';
+				this.sessionSlug = '';
+			},
 		};
 	}
 
-	(window as any).loginPage = loginPage;
+	(window as any).onboardingFlow = onboardingFlow;
 	document.addEventListener('alpine:init', () => {
-		(window as any).Alpine?.data('loginPage', loginPage);
+		(window as any).Alpine?.data('onboardingFlow', onboardingFlow);
 	});
 </script>
 
